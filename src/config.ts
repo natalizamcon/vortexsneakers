@@ -7,8 +7,8 @@
 //  la base de datos. NUNCA pegues aquí la "service_role" / "secret" key.
 // =====================================================================
 
-export const SUPABASE_URL = "https://TU-PROYECTO.supabase.co";
-export const SUPABASE_KEY = "PEGA-AQUI-TU-PUBLISHABLE-KEY";
+export const SUPABASE_URL = "https://tqktrwvyztyjbofnqbib.supabase.co";
+export const SUPABASE_KEY = "sb_publishable_5U43MKD3MnRP7kZvF_Q_nQ_E71AsEtb";
 
 // (Opcional) Si prefieres usar variables de entorno en Netlify:
 // VITE_SUPABASE_URL y VITE_SUPABASE_KEY tienen prioridad sobre lo de arriba.
