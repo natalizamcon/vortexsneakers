@@ -1,0 +1,32 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: #f8fafc; color: #1e293b; font-family: "Montserrat", system-ui, sans-serif; }
+
+.vx { font-family: "Montserrat", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }
+.vx-d { font-family: "Montserrat", system-ui, sans-serif; letter-spacing: -0.015em; }
+.vx-num { font-variant-numeric: tabular-nums; }
+.vx :focus-visible { outline: 2px solid #7928CA; outline-offset: 2px; border-radius: 6px; }
+.vx-grad { background: linear-gradient(135deg, #08BFC5 0%, #7928CA 100%); }
+.vx-photo { background: linear-gradient(135deg, #e6f9fa 0%, #ffffff 50%, #f4ebfd 100%); }
+.vx-safe-b { padding-bottom: env(safe-area-inset-bottom, 0px); }
+.vx-safe-t { padding-top: env(safe-area-inset-top, 0px); }
+.vx-noscroll::-webkit-scrollbar { display: none; }
+.vx-noscroll { scrollbar-width: none; }
+.vx-spin { animation: vxspin 0.9s linear infinite; }
+@keyframes vxspin { to { transform: rotate(360deg); } }
+
+/* Evita que el iPhone haga zoom al tocar un campo */
+@media (max-width: 639px) {
+  .vx input, .vx select, .vx textarea { font-size: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .vx * { transition: none !important; animation: none !important; }
+}
+/* Reportes en PDF: solo se imprime el contenido */
+@media print {
+  body { background: #fff; }
+  .vx-print-area { margin: 0 !important; padding: 0 !important; }
+}
