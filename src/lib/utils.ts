@@ -61,7 +61,10 @@ export const payState = (db, s) => {
 export const lotTotal = (l) => l.compra + l.transporte + l.otros;
 export const pCost = (p) => p.costoCompra + p.costoTransporte;
 export function computeMetrics(db) {
-  const P = db.products;
+  // Los pares eliminados no cuentan como inventario; los dados de baja por pérdida restan de la ganancia
+  const P = db.products.filter((p) => p.estado !== "Eliminado");
+  const bajas = db.products.filter((p) => p.estado === "Eliminado" && !String(p.bajaMotivo || "").startsWith("Cargado por error"));
+  const costoBajas = sum(bajas, pCost);
   const active = db.sales.filter((s) => s.estado === "Activa");
   const ventas = sum(active, saleTotal);
   const cobradoVentas = sum(active, (s) => paidOf(db, s.id));
@@ -72,14 +75,14 @@ export function computeMetrics(db) {
   const gastos = sum(db.expenses.filter((e) => !e.anulado), (e) => e.monto);
   const otros = sum(db.otherIncome, (e) => e.monto);
   const bruta = ventas - costoVendido;
-  const neta = bruta - gastos + otros;
+  const neta = bruta - gastos - costoBajas + otros;
   const inversion = sum(db.lots, lotTotal);
   const recuperado = Math.max(0, cobrado + otros - gastos);
   const stock = P.filter((p) => p.estado !== "Vendido");
   return {
     total: P.length, disp: P.filter((p) => p.estado === "Disponible").length, res: P.filter((p) => p.estado === "Reservado").length,
     vend: P.filter((p) => p.estado === "Vendido").length, ventas, cobrado, cobradoVentas, adelantos, pendiente: ventas - cobradoVentas,
-    costoVendido, gastos, otros, bruta, neta, inversion, recuperado, porRecuperar: Math.max(0, inversion - recuperado),
+    costoVendido, gastos, otros, bruta, neta, costoBajas, nBajas: bajas.length, inversion, recuperado, porRecuperar: Math.max(0, inversion - recuperado),
     invCosto: sum(stock, pCost), invPrecio: sum(stock, (p) => p.precio),
     ventasHoy: sum(active.filter((s) => s.fecha === TODAY), saleTotal), ventasMes: sum(active.filter((s) => s.fecha.startsWith(TODAY.slice(0, 7))), saleTotal),
     paresMes: sum(active.filter((s) => s.fecha.startsWith(TODAY.slice(0, 7))), (s) => s.items.length),

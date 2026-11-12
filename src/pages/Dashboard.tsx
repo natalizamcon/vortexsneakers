@@ -17,8 +17,9 @@ export function Dashboard({ db, m, go, userName, setModal }) {
   }), [db]);
   const by = (key) => { const o = {}; m.active.forEach((s) => { const k = key(s); o[k] = o[k] || { name: k, ventas: 0, pares: 0 }; o[k].ventas += saleTotal(s); o[k].pares += s.items.length; }); return Object.values(o).sort((a, b) => b.ventas - a.ventas); };
   const canal = by((s) => s.canal), socio = by((s) => userName(s.socio));
-  const origen = ["Americano", "Coreano"].map((o) => { const all = db.products.filter((p) => p.origen === o); const v = all.filter((p) => p.estado === "Vendido").length; return { name: o, vendidos: v, total: all.length, rot: all.length ? Math.round((v / all.length) * 100) : 0 }; });
-  const tallas = [...new Set(db.products.map((p) => p.talla))].sort((a, b) => a - b).map((t) => ({ talla: String(t), Disponibles: db.products.filter((p) => p.talla === t && p.estado !== "Vendido").length, Vendidos: db.products.filter((p) => p.talla === t && p.estado === "Vendido").length }));
+  const vivos = db.products.filter((p) => p.estado !== "Eliminado");
+  const origen = ["Americano", "Coreano"].map((o) => { const all = vivos.filter((p) => p.origen === o); const v = all.filter((p) => p.estado === "Vendido").length; return { name: o, vendidos: v, total: all.length, rot: all.length ? Math.round((v / all.length) * 100) : 0 }; });
+  const tallas = [...new Set(vivos.map((p) => p.talla))].sort((a, b) => a - b).map((t) => ({ talla: String(t), Disponibles: vivos.filter((p) => p.talla === t && p.estado !== "Vendido").length, Vendidos: vivos.filter((p) => p.talla === t && p.estado === "Vendido").length }));
   const slow = db.products.filter((p) => p.estado === "Disponible" && diffDays(p.fechaIngreso, TODAY) >= db.config.diasBajaRotacion);
   const expiring = db.reservations.filter((r) => r.estado === "Activa" && (new Date(r.vence) - NOW) / 3600000 < 12);
   const pendOrders = db.sales.filter((s) => s.estado === "Activa" && s.pedido !== "Entregado");
@@ -61,7 +62,7 @@ export function Dashboard({ db, m, go, userName, setModal }) {
               ["Por cobrar", m.pendiente, `${owing.length} ventas con saldo`, "rose"],
               ["Costo de lo vendido", m.costoVendido, "Costo real de cada par vendido", "slate"],
               ["Ganancia bruta", m.bruta, "Ventas − costo de lo vendido", "lila"],
-              ["Ganancia neta estimada", m.neta, `Bruta − gastos (${bs0(m.gastos)})`, "lila"],
+              ["Ganancia neta estimada", m.neta, m.costoBajas > 0 ? `Bruta − gastos (${bs0(m.gastos)}) − pares dados de baja (${bs0(m.costoBajas)})` : `Bruta − gastos (${bs0(m.gastos)})`, "lila"],
             ].map(([l, v, s, t]) => (
               <div key={l} className="rounded-xl bg-slate-50 px-3 py-2.5">
                 <div className="text-xs text-slate-500">{l}</div>

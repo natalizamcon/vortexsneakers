@@ -62,6 +62,7 @@ export async function cargarTodo(esAdmin: boolean) {
         talla: num(p.talla), color: p.color, hex: colorHex(p.color), estadoFisico: p.estado_fisico, descripcion: p.descripcion || "", obs: p.obs || "",
         photos: ph, fotos: ph.length, fechaIngreso: p.fecha_ingreso, costoCompra: num(p.costo_compra), costoTransporte: num(p.costo_transporte),
         precio: num(p.precio), estado: p.estado, socio: p.creado_por,
+        bajaMotivo: p.baja_motivo || "", bajaEn: p.baja_en || null, bajaPor: p.baja_por || null,
       };
     }),
     clients: clientes.map((x) => ({ id: x.id, nombre: x.nombre, telefono: x.telefono, zona: x.zona || "", direccion: x.direccion || "", obs: x.obs || "", fechaRegistro: isoLocal(new Date(x.creado_en)) })),
@@ -224,6 +225,22 @@ export function crearAcciones({ db, me, recargar, toast }) {
       await supabase.storage.from(BUCKET).remove([photo.ruta]);
       auditar("Eliminó foto", codigo, "");
       toast("Foto eliminada."); await recargar(); return true;
+    },
+    async deleteProducts(ids, motivo, nota = "") {
+      const { data, error } = await supabase.rpc("eliminar_pares", { p_ids: ids, p_motivo: motivo, p_nota: nota });
+      if (error) return fallo(error);
+      const r = data || {};
+      if (r.rutas && r.rutas.length) await supabase.storage.from(BUCKET).remove(r.rutas);
+      const partes = [];
+      if (r.borrados) partes.push(`${r.borrados} par(es) eliminado(s) por completo`);
+      if (r.baja) partes.push(`${r.baja} par(es) dado(s) de baja (están en la pestaña Eliminados)`);
+      if (r.omitidos && r.omitidos.length) partes.push(`no se tocaron ${r.omitidos.join(", ")} porque ya no estaban disponibles`);
+      toast((partes.join("; ") || "No se eliminó ningún par") + ".", r.omitidos && r.omitidos.length ? "err" : "ok");
+      await recargar();
+      return true;
+    },
+    async restoreProduct(p) {
+      return rpc("restaurar_par", { p_id: p.id }, `${p.codigo} volvió a Disponibles.`);
     },
     async deleteProduct(p) {
       const { data, error } = await supabase.rpc("eliminar_producto", { p_id: p.id });

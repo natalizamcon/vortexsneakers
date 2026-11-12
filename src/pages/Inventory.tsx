@@ -4,12 +4,18 @@ import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV } from "../lib/utils";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
-export function ProductCard({ p, onClick, children }) {
+export function ProductCard({ p, onClick, children, selected = undefined }) {
+  const selecting = selected !== undefined;
   return (
-    <div className="bg-white rounded-xl border border-slate-200 overflow-hidden hover:border-cyan-400 transition-colors flex flex-col">
-      <button onClick={onClick} className="text-left flex-1">
+    <div className={`bg-white rounded-xl border overflow-hidden transition-colors flex flex-col ${selected ? "border-purple-600 ring-2 ring-purple-600" : "border-slate-200 hover:border-cyan-400"}`}>
+      <button onClick={onClick} className="text-left flex-1" aria-pressed={selecting ? selected : undefined}>
         <div className="relative aspect-video vx-photo overflow-hidden">
           <ProductPhoto p={p} />
+          {selecting && (
+            <span className={`absolute bottom-2 left-2 w-6 h-6 rounded-full grid place-items-center border-2 ${selected ? "bg-purple-700 border-purple-700 text-white" : "bg-white border-slate-300"}`} aria-hidden="true">
+              {selected && <CheckCircle2 size={14} />}
+            </span>
+          )}
           <span className="absolute top-2 left-2 vx-d text-xs font-bold bg-white rounded-md px-1.5 py-0.5 text-slate-900">{p.codigo}</span>
           <span className="absolute top-2 right-2"><Pill>{p.estado}</Pill></span>
           <span className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-slate-500 bg-white rounded px-1.5"><Camera size={11} />{p.fotos}</span>
@@ -33,6 +39,8 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
   const [q, setQ] = useState("");
   const [f, setF] = useState({ origen: "Todos", talla: "Todas", marca: "Todas", max: "" });
   const [view, setView] = useState("cards");
+  const [selecting, setSelecting] = useState(false);
+  const [sel, setSel] = useState(new Set());
   const marcas = ["Todas", ...new Set(db.products.map((p) => p.marca))];
   const tallas = ["Todas", ...[...new Set(db.products.map((p) => p.talla))].sort((a, b) => a - b).map(String)];
   const match = (p) => {
@@ -42,18 +50,32 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
   const count = (st) => db.products.filter((p) => p.estado === st).length;
   const list = db.products.filter((p) => p.estado === tab && match(p));
   const TABS = [["Disponible", "Disponibles", Package], ["Reservado", "Reservados", Clock], ["Vendido", "Historial de vendidos", History]];
+  if (can.admin && (count("Eliminado") > 0 || tab === "Eliminado")) TABS.push(["Eliminado", "Eliminados", Trash2]);
+  const cambiarTab = (k) => { setTab(k); setSelecting(false); setSel(new Set()); };
+  const visibles = list.map((p) => p.id);
+  const elegidos = visibles.filter((id) => sel.has(id));
+  const todos = visibles.length > 0 && elegidos.length === visibles.length;
+  const alternar = (id) => { const n = new Set(sel); n.has(id) ? n.delete(id) : n.add(id); setSel(n); };
+  const terminarSeleccion = () => { setSelecting(false); setSel(new Set()); };
+  const eliminados = db.products.filter((p) => p.estado === "Eliminado" && match(p)).sort((a, b) => String(b.bajaEn || "").localeCompare(String(a.bajaEn || "")));
 
   const soldRows = db.sales.filter((s) => s.estado === "Activa").flatMap((s) => s.items.map((it) => ({ s, it, p: db.products.find((x) => x.id === it.productId) }))).filter((r) => r.p && match(r.p)).sort((a, b) => b.s.fecha.localeCompare(a.s.fecha) || b.s.id.localeCompare(a.s.id));
 
   return (
     <div>
       <PageHead title="Inventario" route={tab === "Disponible" ? "/inventario" : tab === "Reservado" ? "/inventario/reservados" : "/inventario/historial"} desc="El catálogo muestra solo lo que se puede vender. Lo reservado y lo vendido tienen su propia pestaña.">
-        {can.inv && <Btn onClick={() => setModal({ type: "product" })}><Plus size={15} /> Nuevo par</Btn>}
+        {can.admin && tab === "Disponible" && list.length > 0 && (
+          selecting
+            ? <Btn variant="outline" onClick={terminarSeleccion}><X size={15} /> Cancelar selección</Btn>
+            : <Btn variant="outline" onClick={() => setSelecting(true)}><Trash2 size={15} /> Eliminar pares</Btn>
+        )}
+        {can.inv && !selecting && <Btn onClick={() => setModal({ type: "product" })}><Plus size={15} /> Nuevo par</Btn>}
       </PageHead>
+      {selecting && <div className="mb-3"><Note tone="rose">Toca los pares que quieres eliminar y luego el botón <b>Eliminar</b> de abajo.</Note></div>}
 
       <div className="flex gap-1 mb-3 overflow-x-auto vx-noscroll border-b border-slate-200 -mx-3 px-3 sm:mx-0 sm:px-0" role="tablist">
         {TABS.map(([k, l, I]) => (
-          <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)} className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-purple-700 text-purple-700 font-semibold" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
+          <button key={k} role="tab" aria-selected={tab === k} onClick={() => cambiarTab(k)} className={`flex items-center gap-2 px-3 sm:px-4 py-2.5 text-sm whitespace-nowrap border-b-2 -mb-px ${tab === k ? "border-purple-700 text-purple-700 font-semibold" : "border-transparent text-slate-500 hover:text-slate-800"}`}>
             <I size={16} /><span className="sm:hidden">{k === "Vendido" ? "Historial" : l}</span><span className="hidden sm:inline">{l}</span><span className={`text-xs rounded-full px-2 py-0.5 ${tab === k ? "bg-purple-100 text-purple-700" : "bg-slate-100 text-slate-500"}`}>{count(k)}</span>
           </button>
         ))}
@@ -67,7 +89,7 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
           <Select value={f.marca} onChange={(e) => setF({ ...f, marca: e.target.value })} options={marcas.map((x) => ({ value: x, label: x === "Todas" ? "Todas las marcas" : x }))} />
           <input className={inputCls} type="number" placeholder="Precio máx." value={f.max} onChange={(e) => setF({ ...f, max: e.target.value })} />
         </div>
-        {tab !== "Vendido" && (
+        {tab !== "Vendido" && tab !== "Eliminado" && (
           <div className="flex bg-slate-100 rounded-lg p-1 self-start">
             <button onClick={() => setView("cards")} className={`p-1.5 rounded-md ${view === "cards" ? "bg-white shadow-sm" : "text-slate-500"}`} aria-label="Ver tarjetas"><LayoutGrid size={16} /></button>
             <button onClick={() => setView("table")} className={`p-1.5 rounded-md ${view === "table" ? "bg-white shadow-sm" : "text-slate-500"}`} aria-label="Ver tabla"><List size={16} /></button>
@@ -75,7 +97,34 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
         )}
       </div>
 
-      {tab === "Vendido" ? (
+      {tab === "Eliminado" ? (
+        <Panel title="Pares eliminados" sub="Salieron del inventario, pero se conserva su historial. Puedes devolverlos a Disponibles.">
+          <Table head={["Código", "Producto", "Talla", "Motivo", "Fecha", "Eliminó", "Costo", ""]} empty={!eliminados.length && "No hay pares eliminados con estos filtros."} mobile={eliminados.map((p) => (
+            <MRow key={p.id}>
+              <div className="flex gap-3 items-center">
+                <button onClick={() => setDrawer(p.id)} className="w-14 h-12 shrink-0 rounded-lg overflow-hidden vx-photo" aria-label={`Ver ${p.codigo}`}><ProductPhoto p={p} /></button>
+                <div className="flex-1 min-w-0">
+                  <div className="text-sm font-semibold truncate">{p.codigo} · {p.marca} {p.modelo}</div>
+                  <div className="text-xs text-rose-700 truncate">{p.bajaMotivo || "Sin motivo"}</div>
+                  <div className="text-xs text-slate-500">{p.bajaEn ? fdate(String(p.bajaEn).slice(0, 10)) : ""} · {userName(p.bajaPor)}</div>
+                </div>
+                <Btn size="sm" variant="outline" onClick={() => { if (confirm(`¿Devolver ${p.codigo} a Disponibles?`)) actions.restoreProduct(p); }}><RefreshCw size={13} /> Restaurar</Btn>
+              </div>
+            </MRow>
+          ))}>
+            {eliminados.map((p) => (
+              <tr key={p.id} className="hover:bg-slate-50">
+                <Td className="font-semibold vx-d"><button className="underline-offset-2 hover:underline" onClick={() => setDrawer(p.id)}>{p.codigo}</button></Td>
+                <Td>{p.marca} {p.modelo}<div className="text-xs text-slate-500">{p.color}</div></Td><Td>{p.talla}</Td>
+                <Td className="text-rose-700">{p.bajaMotivo || "Sin motivo"}</Td><Td>{p.bajaEn ? fdate(String(p.bajaEn).slice(0, 10)) : "—"}</Td><Td>{userName(p.bajaPor)}</Td>
+                <Td className="vx-num">{bs(pCost(p))}</Td>
+                <Td><Btn size="sm" variant="outline" onClick={() => { if (confirm(`¿Devolver ${p.codigo} a Disponibles?`)) actions.restoreProduct(p); }}><RefreshCw size={13} /> Restaurar</Btn></Td>
+              </tr>
+            ))}
+          </Table>
+          <p className="text-xs text-slate-500 mt-3">El costo de los pares dados de baja por daño, pérdida u otro motivo se descuenta de la ganancia neta. Los cargados por error no cuentan como pérdida.</p>
+        </Panel>
+      ) : tab === "Vendido" ? (
         <>
           <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
             <Stat label="Pares vendidos" value={soldRows.length} tone="slate" icon={History} />
@@ -119,7 +168,7 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
             const r = tab === "Reservado" && db.reservations.find((x) => x.productId === p.id && x.estado === "Activa");
             const h = r ? (new Date(r.vence) - NOW) / 3600000 : 0;
             return (
-              <ProductCard key={p.id} p={p} onClick={() => setDrawer(p.id)}>
+              <ProductCard key={p.id} p={p} selected={selecting ? sel.has(p.id) : undefined} onClick={() => (selecting ? alternar(p.id) : setDrawer(p.id))}>
                 {r && (
                   <div className="border-t border-slate-100 p-3 bg-purple-50 space-y-2">
                     <div className="text-xs"><span className="font-semibold text-slate-900">{client(r.clienteId)?.nombre}</span><div className={h < 12 ? "text-rose-600 font-medium" : "text-slate-600"}>Vence en {h > 0 ? `${Math.floor(h)} h` : "0 h (vencida)"}{r.adelanto ? ` · adelanto ${bs0(r.adelanto)}` : ""}</div></div>
@@ -135,7 +184,7 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
         </div>
       ) : (
         <Panel>
-          <Table head={tab === "Reservado" ? ["Código", "Producto", "Talla", "Cliente", "Vence", "Adelanto", "Precio", ""] : ["Código", "Producto", "Talla", "Origen", "Lote", "Costo", "Precio", "Margen", "Días en stock"]}>
+          <Table head={tab === "Reservado" ? ["Código", "Producto", "Talla", "Cliente", "Vence", "Adelanto", "Precio", ""] : [...(selecting ? [<input key="todos" type="checkbox" className="w-4 h-4 accent-purple-700" aria-label="Seleccionar todos" checked={todos} onChange={() => setSel(todos ? new Set() : new Set(visibles))} />] : []), "Código", "Producto", "Talla", "Origen", "Lote", "Costo", "Precio", "Margen", "Días en stock"]}>
             {list.map((p) => {
               const r = tab === "Reservado" && db.reservations.find((x) => x.productId === p.id && x.estado === "Activa");
               return tab === "Reservado" ? (
@@ -144,7 +193,8 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
                   <Td>{r && <div className="flex gap-1.5"><Btn size="sm" onClick={() => setModal({ type: "sell", productIds: [p.id], reservaIds: [r.id], clienteId: r.clienteId })}>Vender</Btn><Btn size="sm" variant="danger" onClick={() => { if (confirm("¿Cancelar la reserva? El par vuelve a Disponibles.")) actions.cancelReservation(r.id); }}>Cancelar</Btn></div>}</Td>
                 </tr>
               ) : (
-                <tr key={p.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setDrawer(p.id)}>
+                <tr key={p.id} className={`cursor-pointer ${selecting && sel.has(p.id) ? "bg-purple-50" : "hover:bg-slate-50"}`} onClick={() => (selecting ? alternar(p.id) : setDrawer(p.id))}>
+                  {selecting && <Td><input type="checkbox" className="w-4 h-4 accent-purple-700" aria-label={`Seleccionar ${p.codigo}`} checked={sel.has(p.id)} onChange={() => alternar(p.id)} onClick={(e) => e.stopPropagation()} /></Td>}
                   <Td className="font-semibold vx-d">{p.codigo}</Td><Td>{p.marca} {p.modelo}<div className="text-xs text-slate-500">{p.color}</div></Td>
                   <Td>{p.talla}</Td><Td><Pill>{p.origen}</Pill></Td><Td>{p.lote}</Td><Td className="vx-num">{bs(pCost(p))}</Td>
                   <Td className="vx-num font-medium">{bs(p.precio)}</Td><Td className="vx-num text-cyan-700">{bs(p.precio - pCost(p))}</Td><Td className="vx-num">{diffDays(p.fechaIngreso, TODAY)}</Td>
@@ -154,7 +204,64 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
           </Table>
         </Panel>
       )}
+
+      {selecting && (
+        <>
+          <div className="h-20" aria-hidden="true" />
+          <div className="fixed z-30 left-3 right-3 bottom-20 lg:bottom-4 lg:left-72 lg:right-6 bg-slate-900 text-white rounded-xl shadow-xl px-4 py-3 flex flex-wrap items-center gap-2" role="region" aria-label="Pares seleccionados">
+            <span className="text-sm font-semibold flex-1 min-w-max">{elegidos.length} {elegidos.length === 1 ? "par seleccionado" : "pares seleccionados"}</span>
+            <button className="text-sm px-3 py-1.5 rounded-lg hover:bg-slate-700" onClick={() => setSel(todos ? new Set() : new Set(visibles))}>{todos ? "Quitar todos" : `Seleccionar los ${visibles.length}`}</button>
+            <button disabled={!elegidos.length} className="text-sm font-semibold px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-40 flex items-center gap-1.5"
+              onClick={() => setModal({ type: "deleteProducts", ids: elegidos, onDone: terminarSeleccion })}><Trash2 size={15} /> Eliminar</button>
+            <button className="p-1.5 rounded-lg hover:bg-slate-700" aria-label="Cancelar selección" onClick={terminarSeleccion}><X size={17} /></button>
+          </div>
+        </>
+      )}
     </div>
+  );
+}
+
+/** Confirmación para eliminar uno o varios pares */
+export function DeleteProductsModal({ db, ids, onClose, onDone, actions }) {
+  const MOTIVOS = ["Cargado por error", "Dañado / no se puede vender", "Perdido o robado", "Regalado o uso personal", "Otro"];
+  const ps = (ids || []).map((id) => db.products.find((p) => p.id === id)).filter(Boolean);
+  const disponibles = ps.filter((p) => p.estado === "Disponible");
+  const [motivo, setMotivo] = useState(MOTIVOS[0]);
+  const [nota, setNota] = useState("");
+  const [busy, run] = useBusy();
+  const conHistorial = disponibles.filter((p) => db.reservations.some((r) => r.productId === p.id) || db.sales.some((s) => s.items.some((i) => i.productId === p.id)));
+  const error = motivo === MOTIVOS[0];
+  const costo = sum(disponibles, pCost);
+  const n = disponibles.length;
+  return (
+    <Modal title={n === 1 ? `Eliminar ${disponibles[0].codigo}` : `Eliminar ${n} pares`} onClose={onClose} footer={<>
+      <Btn variant="ghost" onClick={onClose}>Cerrar</Btn>
+      <Btn variant="danger" disabled={busy || !n || (motivo === "Otro" && !nota.trim())}
+        onClick={() => run(async () => { if (await actions.deleteProducts(disponibles.map((p) => p.id), motivo, nota.trim())) { if (onDone) onDone(); onClose(); } })}>
+        {busy ? <Spinner /> : <Trash2 size={15} />} {n === 1 ? "Eliminar par" : `Eliminar ${n} pares`}
+      </Btn>
+    </>}>
+      <div className="flex flex-wrap gap-1.5 max-h-28 overflow-y-auto">
+        {disponibles.map((p) => <span key={p.id} className="text-xs font-semibold bg-slate-100 rounded-md px-2 py-1">{p.codigo} · {p.marca} {p.modelo} T{p.talla}</span>)}
+      </div>
+      {ps.length > n && <p className="text-xs text-amber-700">{ps.length - n} par(es) ya no están disponibles y no se eliminarán.</p>}
+      <Field label="Motivo">
+        <Select value={motivo} onChange={(e) => setMotivo(e.target.value)} options={MOTIVOS} />
+      </Field>
+      <Field label={motivo === "Otro" ? "Explica el motivo" : "Nota (opcional)"}>
+        <Input value={nota} placeholder="Ej.: suela despegada, se registró dos veces" onChange={(e) => setNota(e.target.value)} />
+      </Field>
+      <div className={`rounded-xl p-3 text-sm ${error ? "bg-slate-50 text-slate-700" : "bg-rose-50 text-rose-800"}`}>
+        {error ? (
+          <>
+            <p>Se borran por completo, junto con sus fotos.</p>
+            {conHistorial.length > 0 && <p className="mt-1">Excepto {conHistorial.map((p) => p.codigo).join(", ")}: tienen reservas o ventas anteriores, así que se dan de baja y su historial se conserva.</p>}
+          </>
+        ) : (
+          <p>Salen del inventario y quedan en la pestaña <b>Eliminados</b> con este motivo. Su costo ({bs(costo)}) se descuenta de la ganancia neta como pérdida. Si fue un error, puedes restaurarlos.</p>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -181,7 +288,7 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
         <div className="sticky top-0 bg-white z-10 flex items-center justify-between px-5 h-14 border-b border-slate-100">
           <div className="flex items-center gap-2"><span className="vx-d font-bold text-lg">{p.codigo}</span><Pill>{p.estado}</Pill></div>
           <div className="flex items-center gap-1">
-            {can.inv && p.estado !== "Vendido" && <Btn size="sm" variant="outline" onClick={() => { onClose(); setModal({ type: "product", edit: p }); }}><Pencil size={13} /> Editar</Btn>}
+            {can.inv && p.estado !== "Vendido" && p.estado !== "Eliminado" && <Btn size="sm" variant="outline" onClick={() => { onClose(); setModal({ type: "product", edit: p }); }}><Pencil size={13} /> Editar</Btn>}
             <button onClick={onClose} className="p-1.5 rounded-md text-slate-400 hover:bg-slate-100" aria-label="Cerrar"><X size={18} /></button>
           </div>
         </div>
@@ -243,7 +350,13 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
             </div>
           )}
           {can.admin && p.estado === "Disponible" && (
-            <button className="text-xs text-rose-600 underline" onClick={() => { if (confirm(`¿Eliminar ${p.codigo} del inventario? Solo es posible si nunca se reservó ni vendió.`)) actions.deleteProduct(p).then((ok) => ok && onClose()); }}>Eliminar este par (cargado por error)</button>
+            <Btn variant="danger" className="w-full" onClick={() => { onClose(); setModal({ type: "deleteProducts", ids: [p.id] }); }}><Trash2 size={15} /> Eliminar este par</Btn>
+          )}
+          {p.estado === "Eliminado" && (
+            <div className="rounded-xl bg-rose-50 p-3 text-sm space-y-2">
+              <div><div className="font-medium text-rose-800">Eliminado del inventario</div><div className="text-xs text-rose-700 mt-0.5">{p.bajaMotivo || "Sin motivo"}{p.bajaEn ? ` · ${fdate(String(p.bajaEn).slice(0, 10))}` : ""} · {userName(p.bajaPor)}</div></div>
+              {can.admin && <Btn size="sm" variant="outline" onClick={() => { if (confirm(`¿Devolver ${p.codigo} a Disponibles?`)) actions.restoreProduct(p).then((ok) => ok && onClose()); }}><RefreshCw size={13} /> Restaurar a disponibles</Btn>}
+            </div>
           )}
           {can.admin && (
             <div>

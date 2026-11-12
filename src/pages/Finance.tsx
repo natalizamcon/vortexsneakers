@@ -24,7 +24,7 @@ export function Finance({ db, m, setModal, userName, actions }) {
         <Panel title="Estado de resultados" sub="¿Cuánto estamos ganando?">
           <div className="text-sm">
             <Row l="Ventas registradas" v={m.ventas} /><Row l="Costo de los pares vendidos" v={m.costoVendido} minus />
-            <Row l="Ganancia bruta" v={m.bruta} strong tone="text-purple-700" /><Row l="Gastos operativos" v={m.gastos} minus /><Row l="Otros ingresos" v={m.otros} />
+            <Row l="Ganancia bruta" v={m.bruta} strong tone="text-purple-700" /><Row l="Gastos operativos" v={m.gastos} minus />{m.costoBajas > 0 && <Row l={`Pares dados de baja (${m.nBajas})`} v={m.costoBajas} minus />}<Row l="Otros ingresos" v={m.otros} />
             <Row l="Ganancia neta estimada" v={m.neta} strong tone="text-purple-700" />
           </div>
         </Panel>
