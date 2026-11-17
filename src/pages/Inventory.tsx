@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star } from "lucide-react";
+import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV } from "../lib/utils";
+import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm } from "../lib/utils";
+import { FORMATOS, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
 export function ProductCard({ p, onClick, children, selected = undefined }) {
@@ -22,7 +23,7 @@ export function ProductCard({ p, onClick, children, selected = undefined }) {
         </div>
         <div className="p-3">
           <div className="text-sm font-semibold text-slate-900 truncate">{p.marca} {p.modelo}</div>
-          <div className="text-xs text-slate-500 mt-0.5">Talla {p.talla} · {p.color} · {p.origen === "Americano" ? "US" : "KR"}</div>
+          <div className="text-xs text-slate-500 mt-0.5 truncate">Talla {p.talla}{p.cm ? ` · ${fcm(p.cm)}` : ""} · {p.color} · {p.origen === "Americano" ? "US" : "KR"}</div>
           <div className="flex items-end justify-between mt-2">
             <span className="vx-d vx-num text-base font-bold text-slate-900">{bs0(p.precio)}</span>
             <span className="text-xs text-cyan-700 vx-num">+{bs0(p.precio - pCost(p))}</span>
@@ -196,7 +197,7 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
                 <tr key={p.id} className={`cursor-pointer ${selecting && sel.has(p.id) ? "bg-purple-50" : "hover:bg-slate-50"}`} onClick={() => (selecting ? alternar(p.id) : setDrawer(p.id))}>
                   {selecting && <Td><input type="checkbox" className="w-4 h-4 accent-purple-700" aria-label={`Seleccionar ${p.codigo}`} checked={sel.has(p.id)} onChange={() => alternar(p.id)} onClick={(e) => e.stopPropagation()} /></Td>}
                   <Td className="font-semibold vx-d">{p.codigo}</Td><Td>{p.marca} {p.modelo}<div className="text-xs text-slate-500">{p.color}</div></Td>
-                  <Td>{p.talla}</Td><Td><Pill>{p.origen}</Pill></Td><Td>{p.lote}</Td><Td className="vx-num">{bs(pCost(p))}</Td>
+                  <Td>{p.talla}{p.cm ? <span className="text-xs text-slate-500"> · {fcm(p.cm)}</span> : null}</Td><Td><Pill>{p.origen}</Pill></Td><Td>{p.lote}</Td><Td className="vx-num">{bs(pCost(p))}</Td>
                   <Td className="vx-num font-medium">{bs(p.precio)}</Td><Td className="vx-num text-cyan-700">{bs(p.precio - pCost(p))}</Td><Td className="vx-num">{diffDays(p.fechaIngreso, TODAY)}</Td>
                 </tr>
               );
@@ -277,6 +278,12 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
   const hist = db.audit.filter((a) => a.entidad === p.codigo);
   const margin = p.precio - pCost(p);
   const cur = Math.min(photo, Math.max(0, p.photos.length - 1));
+  const mover = (de, a) => {
+    const ids = p.photos.map((f) => f.id);
+    const [x] = ids.splice(de, 1);
+    ids.splice(a, 0, x);
+    run(async () => { if (await actions.reorderPhotos(p.id, ids, a === 0)) setPhoto(a); });
+  };
   const onFiles = (e) => {
     const files = Array.from(e.target.files || []);
     e.target.value = "";
@@ -296,16 +303,25 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
           <div>
             <div className="relative aspect-video rounded-xl vx-photo overflow-hidden">
               <ProductPhoto p={p} idx={cur} />
+              {cur === 0 && p.photos.length > 0 && <span className="absolute top-2 left-2 text-xs font-semibold bg-white text-slate-900 rounded-md px-2 py-0.5 flex items-center gap-1"><Star size={12} className="text-amber-500" /> Portada</span>}
               {can.inv && p.photos[cur] && (
                 <button className="absolute top-2 right-2 p-1.5 rounded-lg bg-white text-rose-600 shadow" aria-label="Eliminar esta foto" disabled={busy}
                   onClick={() => { if (confirm("¿Eliminar esta foto?")) run(async () => { await actions.deletePhoto(p.photos[cur], p.codigo); setPhoto(0); }); }}><Trash2 size={15} /></button>
+              )}
+              {can.inv && p.photos.length > 1 && (
+                <div className="absolute bottom-2 inset-x-2 flex items-center justify-between gap-2">
+                  <button disabled={busy || cur === 0} onClick={() => mover(cur, cur - 1)} className="p-2 rounded-lg bg-white shadow text-slate-700 disabled:opacity-30" aria-label="Mover foto a la izquierda"><ArrowLeft size={15} /></button>
+                  {cur !== 0 && <button disabled={busy} onClick={() => mover(cur, 0)} className="px-3 py-1.5 rounded-lg bg-white shadow text-xs font-semibold text-slate-900 flex items-center gap-1"><Star size={13} className="text-amber-500" /> Usar como portada</button>}
+                  <button disabled={busy || cur === p.photos.length - 1} onClick={() => mover(cur, cur + 1)} className="p-2 rounded-lg bg-white shadow text-slate-700 disabled:opacity-30" aria-label="Mover foto a la derecha"><ArrowRight size={15} /></button>
+                </div>
               )}
               {busy && <div className="absolute inset-0 bg-white bg-opacity-70 grid place-items-center text-sm text-slate-600"><span className="flex items-center gap-2"><Spinner /> Subiendo…</span></div>}
             </div>
             <div className="flex gap-2 mt-2 overflow-x-auto vx-noscroll">
               {p.photos.map((f, i) => (
-                <button key={f.id} onClick={() => setPhoto(i)} className={`w-16 h-12 shrink-0 rounded-lg overflow-hidden border-2 ${cur === i ? "border-cyan-500" : "border-transparent"}`} aria-label={`Foto ${i + 1}`}>
+                <button key={f.id} onClick={() => setPhoto(i)} className={`relative w-16 h-12 shrink-0 rounded-lg overflow-hidden border-2 ${cur === i ? "border-cyan-500" : "border-transparent"}`} aria-label={i === 0 ? "Foto de portada" : `Foto ${i + 1}`}>
                   <img src={f.url} alt="" className="w-full h-full object-cover" />
+                  {i === 0 && <span className="absolute top-0.5 left-0.5 bg-white rounded p-0.5"><Star size={10} className="text-amber-500" /></span>}
                 </button>
               ))}
               {can.inv && (
@@ -316,12 +332,15 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
               )}
             </div>
           </div>
+          {p.estado !== "Eliminado" && (
+            <Btn variant="lila" className="w-full" onClick={() => { onClose(); setModal({ type: "social", productId: p.id }); }}><Share2 size={15} /> Imagen para redes (precio, talla y cm)</Btn>
+          )}
           <div>
             <h2 className="vx-d text-xl font-bold">{p.marca} {p.modelo}</h2>
             {p.descripcion && <p className="text-sm text-slate-500">{p.descripcion}</p>}
           </div>
           <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
-            {[["Talla", p.talla], ["Color", p.color], ["Origen", p.origen], ["Categoría", p.categoria], ["Estado físico", p.estadoFisico], ["Lote", `${lot.id} · ${lot.nombre}`], ["Ingreso", fdate(p.fechaIngreso)], ["Registró", userName(p.socio)]].map(([k, v]) => (
+            {[["Talla", p.talla], ["Largo", fcm(p.cm) || "—"], ["Color", p.color], ["Origen", p.origen], ["Categoría", p.categoria], ["Estado físico", p.estadoFisico], ["Lote", `${lot.id} · ${lot.nombre}`], ["Ingreso", fdate(p.fechaIngreso)], ["Registró", userName(p.socio)]].map(([k, v]) => (
               <div key={k}><dt className="text-xs text-slate-500">{k}</dt><dd className="font-medium">{v}</dd></div>
             ))}
           </dl>
@@ -373,8 +392,8 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
 export function ProductModal({ db, onClose, actions, edit = null }) {
   const ultimoLote = db.lots[db.lots.length - 1];
   const [p, setP] = useState(edit
-    ? { lote: edit.lote, marca: edit.marca, modelo: edit.modelo, origen: edit.origen, categoria: edit.categoria, talla: edit.talla, color: edit.color, estadoFisico: edit.estadoFisico, precio: edit.precio, descripcion: edit.descripcion, obs: edit.obs }
-    : { lote: ultimoLote?.id || "", marca: "", modelo: "", origen: "Americano", categoria: "Hombre", talla: 41, color: "Blanco", estadoFisico: "Excelente", precio: "", descripcion: "", obs: "" });
+    ? { lote: edit.lote, marca: edit.marca, modelo: edit.modelo, origen: edit.origen, categoria: edit.categoria, talla: edit.talla, color: edit.color, estadoFisico: edit.estadoFisico, precio: edit.precio, descripcion: edit.descripcion, obs: edit.obs, cm: edit.cm ?? "" }
+    : { lote: ultimoLote?.id || "", marca: "", modelo: "", origen: "Americano", categoria: "Hombre", talla: 41, cm: "", color: "Blanco", estadoFisico: "Excelente", precio: "", descripcion: "", obs: "" });
   const [files, setFiles] = useState([]);
   const [busy, run] = useBusy();
   const fileRef = useRef(null);
@@ -382,8 +401,11 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
   const cost = edit ? pCost(edit) : lot ? lotTotal(lot) / lot.pares : 0;
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
-  const colores = [...new Set([...COLORS.map((c) => c[0]), p.color].filter(Boolean))];
-  const ok = p.lote && p.marca.trim() && String(p.talla).trim() && Number(p.precio) >= 0 && String(p.precio) !== "";
+  const colores = [...new Set([...COLORS.map((c) => c[0]), ...db.products.map((x) => x.color)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
+  const cmTxt = String(p.cm ?? "").trim().replace(",", ".");
+  const cmOk = cmTxt === "" || (Number(cmTxt) > 0 && Number(cmTxt) < 100);
+  const portada = (i) => { const nf = [...files]; const [x] = nf.splice(i, 1); nf.unshift(x); setFiles(nf); };
+  const ok = p.lote && p.marca.trim() && String(p.talla).trim() && Number(p.precio) >= 0 && String(p.precio) !== "" && String(p.color || "").trim() && cmOk;
   if (!db.lots.length) {
     return (
       <Modal title="Nuevo par" onClose={onClose} footer={<Btn variant="ghost" onClick={onClose}>Cerrar</Btn>}>
@@ -402,14 +424,17 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
           {previews.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {previews.map((u, i) => (
-                <div key={u} className="relative w-12 h-12 rounded-md overflow-hidden">
+                <div key={u} className={`relative w-14 h-14 rounded-md overflow-hidden border-2 ${i === 0 ? "border-amber-400" : "border-transparent"}`}>
                   <img src={u} alt="" className="w-full h-full object-cover" />
                   <button type="button" className="absolute top-0 right-0 bg-white rounded-bl p-0.5 text-rose-600" aria-label="Quitar foto" onClick={() => setFiles(files.filter((_, j) => j !== i))}><X size={12} /></button>
+                  {i === 0
+                    ? <span className="absolute bottom-0 inset-x-0 bg-amber-400 text-slate-900 text-xs font-semibold text-center leading-4">Portada</span>
+                    : <button type="button" className="absolute bottom-0 left-0 bg-white rounded-tr p-0.5" aria-label="Usar como portada" title="Usar como portada" onClick={() => portada(i)}><Star size={12} className="text-amber-500" /></button>}
                 </div>
               ))}
             </div>
           )}
-          <p className="text-xs text-slate-400 mt-1">Hasta 8 fotos. Se reducen solas para que suban rápido.</p>
+          <p className="text-xs text-slate-400 mt-1">Hasta 8 fotos. La del borde amarillo es la portada; toca la estrella de otra para cambiarla.</p>
         </div>
         <div className="sm:col-span-2 grid grid-cols-2 gap-3">
           <Field label="Lote"><Select value={p.lote} disabled={!!edit && edit.estado === "Vendido"} onChange={(e) => setP({ ...p, lote: e.target.value })} options={db.lots.map((l) => ({ value: l.id, label: `${l.id} · ${l.nombre}` }))} /></Field>
@@ -420,7 +445,11 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
           </Field>
           <Field label="Modelo"><Input value={p.modelo} onChange={(e) => setP({ ...p, modelo: e.target.value })} /></Field>
           <Field label="Talla"><Input type="number" step="0.5" inputMode="decimal" value={p.talla} onChange={(e) => setP({ ...p, talla: e.target.value })} /></Field>
-          <Field label="Color"><Select value={p.color} onChange={(e) => setP({ ...p, color: e.target.value })} options={colores} /></Field>
+          <Field label="Largo (cm)" hint={cmOk ? "Medida de la plantilla. Opcional." : "Escribe un número, por ejemplo 27 o 26,5."}><Input type="text" inputMode="decimal" placeholder="Ej.: 27" value={p.cm} onChange={(e) => setP({ ...p, cm: e.target.value })} /></Field>
+          <Field label="Color" hint="Elige de la lista o escribe otro.">
+            <input className={inputCls} list="vx-colores" value={p.color} placeholder="Ej.: Blanco con rojo" onChange={(e) => setP({ ...p, color: e.target.value })} />
+            <datalist id="vx-colores">{colores.map((c) => <option key={c} value={c} />)}</datalist>
+          </Field>
           <Field label="Categoría"><Select value={p.categoria} onChange={(e) => setP({ ...p, categoria: e.target.value })} options={[...new Set(["Hombre", "Mujer", "Unisex", "Niño", p.categoria])]} /></Field>
           <Field label="Estado físico"><Select value={p.estadoFisico} onChange={(e) => setP({ ...p, estadoFisico: e.target.value })} options={[...new Set(["Excelente", "Muy bueno", "Bueno", p.estadoFisico])]} /></Field>
         </div>
@@ -433,6 +462,130 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
         <Field label="Utilidad estimada"><div className="rounded-lg bg-cyan-50 text-cyan-800 px-3 py-2 text-sm vx-num">{bs((Number(p.precio) || 0) - cost)}</div></Field>
       </div>
       {!edit && <p className="text-xs text-slate-500">El código (V001, V002…) se asigna solo al guardar.</p>}
+    </Modal>
+  );
+}
+
+/** Imagen para publicar en redes: la portada con precio, talla y cm escritos encima */
+export function SocialImageModal({ db, productId, onClose, toast }) {
+  const p = db.products.find((x) => x.id === productId);
+  const canvasRef = useRef(null);
+  const fotoRef = useRef({ url: "", img: null });
+  const [fotoIdx, setFotoIdx] = useState(0);
+  const [formato, setFormato] = useState("cuadrado");
+  const [precio, setPrecio] = useState(p ? bs0(p.precio) : "");
+  const [extra, setExtra] = useState("");
+  const [mostrar, setMostrar] = useState({ precio: true, talla: true, cm: true, titulo: true, codigo: true });
+  const [estado, setEstado] = useState("cargando");
+  const [busy, run] = useBusy();
+  const foto = p?.photos?.[fotoIdx];
+  const titulo = p ? `${p.marca} ${p.modelo}`.trim() : "";
+  const texto = p ? [`${p.codigo} · ${titulo}`, `Talla ${p.talla}${p.cm ? ` · ${fcm(p.cm)}` : ""}`, `${p.estadoFisico} · ${p.color}`, precio, extra.trim()].filter(Boolean).join("\n") : "";
+
+  useEffect(() => {
+    if (!p || !foto) return;
+    let vivo = true;
+    (async () => {
+      try {
+        if (fotoRef.current.url !== foto.url) {
+          setEstado("cargando");
+          fotoRef.current = { url: foto.url, img: await cargarFoto(foto.url) };
+        }
+        if (!vivo || !canvasRef.current) return;
+        await dibujarImagen(canvasRef.current, fotoRef.current.img, {
+          formato: formato as any, precio, talla: String(p.talla), cm: p.cm ? String(p.cm) : "", titulo, codigo: p.codigo, extra, mostrar,
+        });
+        if (vivo) setEstado("listo");
+      } catch (e) {
+        if (vivo) setEstado((e && e.message) || "No se pudo preparar la imagen.");
+      }
+    })();
+    return () => { vivo = false; };
+  }, [foto?.url, formato, precio, extra, mostrar.precio, mostrar.talla, mostrar.cm, mostrar.titulo, mostrar.codigo]);
+
+  if (!p) return null;
+  const nombre = `${p.codigo}-vortex-${formato}.jpg`;
+  const nav: any = typeof navigator !== "undefined" ? navigator : {};
+  const puedeCompartir = !!nav.share && !!nav.canShare;
+  const descargar = () => run(async () => { descargarBlob(await lienzoABlob(canvasRef.current), nombre); toast("Imagen descargada."); });
+  const compartir = () => run(async () => {
+    const file = new File([await lienzoABlob(canvasRef.current)], nombre, { type: "image/jpeg" });
+    if (nav.canShare && nav.canShare({ files: [file] })) {
+      try { await nav.share({ files: [file], title: `${p.codigo} · VORTEX SNEAKERS`, text: texto }); } catch {}
+    } else {
+      descargarBlob(file, nombre);
+      toast("Este navegador no permite compartir directo; la imagen se descargó.");
+    }
+  });
+  const copiar = async () => { try { await navigator.clipboard.writeText(texto); toast("Texto copiado."); } catch { toast("No se pudo copiar el texto.", "err"); } };
+  const Toggle = ({ k, label, disabled = false }) => (
+    <label className={`flex items-center gap-2 text-sm ${disabled ? "text-slate-300" : "text-slate-700"}`}>
+      <input type="checkbox" className="w-4 h-4 accent-purple-700" disabled={disabled} checked={!disabled && mostrar[k]} onChange={() => setMostrar({ ...mostrar, [k]: !mostrar[k] })} />{label}
+    </label>
+  );
+
+  return (
+    <Modal wide title={`Imagen para redes · ${p.codigo}`} onClose={onClose} footer={<>
+      <Btn variant="ghost" onClick={onClose}>Cerrar</Btn>
+      {foto && puedeCompartir && <Btn variant="outline" disabled={busy || estado !== "listo"} onClick={compartir}><Share2 size={15} /> Compartir</Btn>}
+      {foto && <Btn disabled={busy || estado !== "listo"} onClick={descargar}>{busy ? <Spinner /> : <Download size={15} />} Descargar imagen</Btn>}
+    </>}>
+      {!foto ? (
+        <div className="rounded-xl border border-dashed border-slate-300 py-10 px-4 text-center text-sm text-slate-500">
+          Este par todavía no tiene fotos. Agrega una desde su ficha y vuelve aquí.
+        </div>
+      ) : (
+        <div className="grid sm:grid-cols-2 gap-4">
+          <div>
+            <div className="relative rounded-xl overflow-hidden bg-slate-900 mx-auto" style={{ aspectRatio: `${FORMATOS[formato].w} / ${FORMATOS[formato].h}`, maxHeight: "60vh" }}>
+              <canvas ref={canvasRef} className="w-full h-full object-contain" aria-label="Vista previa de la imagen para redes" />
+              {estado !== "listo" && (
+                <div className="absolute inset-0 grid place-items-center bg-slate-900 text-sm text-white p-4 text-center">
+                  {estado === "cargando" ? <span className="flex items-center gap-2"><Spinner /> Preparando la imagen…</span> : estado}
+                </div>
+              )}
+            </div>
+            {p.photos.length > 1 && (
+              <div className="flex gap-2 mt-2 overflow-x-auto vx-noscroll">
+                {p.photos.map((f, i) => (
+                  <button key={f.id} onClick={() => setFotoIdx(i)} className={`relative w-14 h-11 shrink-0 rounded-md overflow-hidden border-2 ${fotoIdx === i ? "border-purple-700" : "border-transparent"}`} aria-label={i === 0 ? "Usar la portada" : `Usar la foto ${i + 1}`}>
+                    <img src={f.url} alt="" className="w-full h-full object-cover" />
+                    {i === 0 && <span className="absolute top-0.5 left-0.5 bg-white rounded p-0.5"><Star size={9} className="text-amber-500" /></span>}
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="space-y-4">
+            <div>
+              <div className="text-xs font-medium text-slate-600 mb-1">Formato</div>
+              <div className="grid grid-cols-3 gap-1 bg-slate-100 rounded-lg p-1" role="radiogroup" aria-label="Formato">
+                {Object.entries(FORMATOS).map(([k, f]) => (
+                  <button key={k} role="radio" aria-checked={formato === k} onClick={() => setFormato(k)} className={`text-xs py-1.5 rounded-md ${formato === k ? "bg-white shadow-sm font-semibold text-slate-900" : "text-slate-500"}`}>{f.label}</button>
+                ))}
+              </div>
+              <p className="text-xs text-slate-500 mt-1">{FORMATOS[formato].hint}</p>
+            </div>
+            <div>
+              <div className="text-xs font-medium text-slate-600 mb-1.5">Datos sobre la foto</div>
+              <div className="grid grid-cols-2 gap-2">
+                <Toggle k="precio" label="Precio" />
+                <Toggle k="talla" label={`Talla ${p.talla}`} />
+                <Toggle k="cm" label={p.cm ? fcm(p.cm) : "cm (sin medida)"} disabled={!p.cm} />
+                <Toggle k="titulo" label="Marca y modelo" />
+                <Toggle k="codigo" label={`Código ${p.codigo}`} />
+              </div>
+              {!p.cm && <p className="text-xs text-slate-500 mt-1">Para mostrar los centímetros, edita el par y llena “Largo (cm)”.</p>}
+            </div>
+            <Field label="Precio en la imagen" hint="Puedes cambiarlo solo para esta publicación, por ejemplo una oferta."><Input value={precio} onChange={(e) => setPrecio(e.target.value)} /></Field>
+            <Field label="Texto adicional (opcional)"><Input value={extra} placeholder="Ej.: Envíos a todo Bolivia" maxLength={60} onChange={(e) => setExtra(e.target.value)} /></Field>
+            <div className="rounded-xl bg-slate-50 p-3">
+              <div className="flex items-center justify-between mb-1"><span className="text-xs font-medium text-slate-600">Texto para la publicación</span><button className="text-xs font-semibold text-purple-700" onClick={copiar}>Copiar texto</button></div>
+              <pre className="text-xs text-slate-700 whitespace-pre-wrap font-sans">{texto}</pre>
+            </div>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }

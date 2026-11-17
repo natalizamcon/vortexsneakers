@@ -15,7 +15,7 @@ export const bs0 = (n) => "Bs " + Math.round(n || 0).toLocaleString("es-BO");
 export const fdate = (iso) => { if (!iso) return "—"; const [y, m, d] = iso.slice(0, 10).split("-"); return `${d}/${m}/${y}`; };
 export const sum = (arr, f) => arr.reduce((a, x) => a + (f ? f(x) : x), 0);
 export const ftime = (iso) => { const d = new Date(iso); return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}/${d.getFullYear()} ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`; };
-export const COLORS = [["Blanco", "#eef2f6"], ["Negro", "#1f2937"], ["Gris", "#9ca3af"], ["Azul marino", "#1e3a8a"], ["Beige", "#d6c7a1"], ["Rojo", "#dc2626"], ["Verde", "#15803d"], ["Rosa", "#f9a8d4"], ["Azul", "#3b82f6"], ["Café", "#78350f"], ["Morado", "#7c3aed"], ["Amarillo", "#facc15"], ["Naranja", "#f97316"], ["Multicolor", "#a3a9bf"]];
+export const COLORS = [["Blanco", "#eef2f6"], ["Negro", "#1f2937"], ["Gris", "#9ca3af"], ["Azul marino", "#1e3a8a"], ["Beige", "#d6c7a1"], ["Rojo", "#dc2626"], ["Verde", "#15803d"], ["Rosa", "#f9a8d4"], ["Azul", "#3b82f6"], ["Café", "#78350f"], ["Morado", "#7c3aed"], ["Amarillo", "#facc15"], ["Naranja", "#f97316"], ["Multicolor", "#a3a9bf"], ["Celeste", "#7dd3fc"], ["Crema", "#f3ead2"], ["Plateado", "#cbd5e1"], ["Dorado", "#d4a72c"], ["Lila", "#c4b5fd"], ["Turquesa", "#2dd4bf"], ["Vino", "#7f1d1d"], ["Verde oliva", "#6b7d3a"], ["Blanco y negro", "#9ca3af"]];
 export const ESTADOS_PEDIDO = ["Pendiente de preparación", "Preparando", "Listo para entregar", "Enviado", "Entregado"];
 export const DEPARTAMENTOS = ["La Paz", "Santa Cruz", "Oruro", "Potosí", "Chuquisaca (Sucre)", "Tarija", "Beni (Trinidad)", "Pando (Cobija)", "Cochabamba (provincias)"];
 export const TIPOS_EVENTO = {
@@ -92,7 +92,16 @@ export function computeMetrics(db) {
 
 
 export const MARCAS = ["Nike", "Adidas", "New Balance", "Converse", "Vans", "Reebok", "Puma", "Fila", "Asics", "Jordan", "Skechers", "Under Armour", "Saucony", "Brooks", "Hoka", "On"];
-export const colorHex = (nombre) => (COLORS.find((c) => c[0] === nombre) || [0, "#cbd5e1"])[1];
+/** Color para el dibujo del par. Acepta colores escritos a mano ("blanco con rojo" → blanco). */
+export const colorHex = (nombre) => {
+  const t = String(nombre || "").trim().toLowerCase();
+  const exacto = COLORS.find((c) => c[0].toLowerCase() === t);
+  if (exacto) return exacto[1];
+  const parecido = [...COLORS].sort((a, b) => b[0].length - a[0].length).find((c) => t.includes(c[0].toLowerCase()));
+  return parecido ? parecido[1] : "#cbd5e1";
+};
+/** "27" → "27 cm" ; vacío → "" */
+export const fcm = (cm) => (cm ? `${String(cm).replace(".", ",")} cm` : "");
 export const ROLES = { admin: "Administrador", vendedor: "Vendedor", inventario: "Encargado de inventario" };
 /** Qué secciones ve cada rol */
 export const ACCESO = {

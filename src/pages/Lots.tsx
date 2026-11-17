@@ -4,7 +4,8 @@ import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV } from "../lib/utils";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
-export function Lots({ db, setModal, userName, can }) {
+export function Lots({ db, setModal, setDrawer, userName, can }) {
+  const [abierto, setAbierto] = useState(null);
   return (
     <div>
       <PageHead title="Compras y lotes" route="/compras" desc="Cada fardo define el costo real de sus pares. Ese costo queda fijo en cada producto.">
@@ -13,7 +14,9 @@ export function Lots({ db, setModal, userName, can }) {
       {!db.lots.length && <div className="bg-white rounded-xl border border-dashed border-slate-300 py-14 text-center text-sm text-slate-500">Todavía no hay lotes. Registra tu primera compra con “Nuevo lote”.</div>}
       <div className="grid md:grid-cols-2 gap-4">
         {db.lots.map((l) => {
-          const ps = db.products.filter((p) => p.lote === l.id), sold = ps.filter((p) => p.estado === "Vendido");
+          // Los pares eliminados no cuentan como cargados ni como stock del lote
+          const ps = db.products.filter((p) => p.lote === l.id && p.estado !== "Eliminado"), sold = ps.filter((p) => p.estado === "Vendido");
+          const elim = db.products.filter((p) => p.lote === l.id && p.estado === "Eliminado").length;
           const ventas = sum(db.sales.filter((s) => s.estado === "Activa").flatMap((s) => s.items).filter((i) => ps.some((p) => p.id === i.productId)), (i) => i.precio);
           return (
             <Panel key={l.id} title={`${l.id} · ${l.nombre}`} sub={`${db.providers.find((x) => x.id === l.proveedorId)?.nombre} (${db.providers.find((x) => x.id === l.proveedorId)?.telefono}) · ${fdate(l.fecha)} · registró ${userName(l.socio)}`} action={<div className="flex items-center gap-1.5"><Pill tone="Americano">{l.origen.split(" (")[0]}</Pill>{can.inv && <button className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100" aria-label={`Editar ${l.id}`} onClick={() => setModal({ type: "lot", edit: l })}><Pencil size={14} /></button>}</div>}>
@@ -21,10 +24,20 @@ export function Lots({ db, setModal, userName, can }) {
                 {[["Compra", bs0(l.compra)], ["Transporte", bs0(l.transporte)], ["Otros", bs0(l.otros)], ["Inversión total", bs0(lotTotal(l))], ["Costo por par", bs(lotTotal(l) / l.pares)], ["Ventas del lote", bs0(ventas)]].map(([k, v]) => <div key={k} className="rounded-lg bg-slate-50 px-2.5 py-2"><div className="text-xs text-slate-500">{k}</div><div className="font-semibold">{v}</div></div>)}
               </div>
               <div className="mt-4 space-y-2 text-xs text-slate-600">
-                <div><div className="flex justify-between"><span>Pares cargados al inventario</span><span className="vx-num">{ps.length}/{l.pares}</span></div><div className="h-1.5 rounded-full bg-slate-100 mt-1"><div className="h-full rounded-full bg-purple-400" style={{ width: (ps.length / l.pares) * 100 + "%" }} /></div></div>
+                <div><div className="flex justify-between"><span>Pares cargados al inventario{elim ? ` (sin contar ${elim} eliminado${elim > 1 ? "s" : ""})` : ""}</span><span className="vx-num">{ps.length}/{l.pares}</span></div><div className="h-1.5 rounded-full bg-slate-100 mt-1"><div className="h-full rounded-full bg-purple-400" style={{ width: (ps.length / l.pares) * 100 + "%" }} /></div></div>
                 <div><div className="flex justify-between"><span>Vendidos</span><span className="vx-num">{sold.length}/{ps.length || l.pares}</span></div><div className="h-1.5 rounded-full bg-slate-100 mt-1"><div className="h-full rounded-full bg-cyan-500" style={{ width: (sold.length / (ps.length || l.pares)) * 100 + "%" }} /></div></div>
                 <div><div className="flex justify-between"><span>Recuperación del lote (ventas ÷ inversión)</span><span className="vx-num">{Math.round((ventas / lotTotal(l)) * 100)}%</span></div></div>
               </div>
+              {ps.length > 0 && (
+                <div className="mt-3">
+                  <button className="text-xs font-semibold text-purple-700" aria-expanded={abierto === l.id} onClick={() => setAbierto(abierto === l.id ? null : l.id)}>{abierto === l.id ? "Ocultar pares" : `Ver los ${ps.length} pares de este lote`}</button>
+                  {abierto === l.id && (
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {ps.map((p) => <button key={p.id} onClick={() => setDrawer(p.id)} className="flex items-center gap-1.5 text-xs bg-slate-50 hover:bg-slate-100 rounded-md px-2 py-1"><span className="font-semibold">{p.codigo}</span><span className="text-slate-500">{p.marca} T{p.talla}</span><Pill>{p.estado}</Pill></button>)}
+                    </div>
+                  )}
+                </div>
+              )}
               {l.obs && <p className="text-xs text-slate-500 mt-3">{l.obs}</p>}
             </Panel>
           );

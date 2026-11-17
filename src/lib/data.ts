@@ -59,7 +59,7 @@ export async function cargarTodo(esAdmin: boolean) {
       const ph = (fotosPor[p.id] || []).sort((a, b) => a.orden - b.orden);
       return {
         id: p.id, codigo: p.codigo, lote: p.lote_id, marca: p.marca, modelo: p.modelo, origen: p.origen, categoria: p.categoria,
-        talla: num(p.talla), color: p.color, hex: colorHex(p.color), estadoFisico: p.estado_fisico, descripcion: p.descripcion || "", obs: p.obs || "",
+        talla: num(p.talla), cm: p.cm == null ? null : num(p.cm), color: p.color, hex: colorHex(p.color), estadoFisico: p.estado_fisico, descripcion: p.descripcion || "", obs: p.obs || "",
         photos: ph, fotos: ph.length, fechaIngreso: p.fecha_ingreso, costoCompra: num(p.costo_compra), costoTransporte: num(p.costo_transporte),
         precio: num(p.precio), estado: p.estado, socio: p.creado_por,
         bajaMotivo: p.baja_motivo || "", bajaEn: p.baja_en || null, bajaPor: p.baja_por || null,
@@ -201,7 +201,8 @@ export function crearAcciones({ db, me, recargar, toast }) {
     async saveProduct(p, files = [], id = null) {
       const fila = {
         lote_id: p.lote, marca: p.marca.trim(), modelo: (p.modelo || "").trim(), origen: p.origen, categoria: p.categoria,
-        talla: Number(p.talla), color: p.color, estado_fisico: p.estadoFisico, descripcion: p.descripcion || "", obs: p.obs || "", precio: Number(p.precio),
+        talla: Number(p.talla), cm: String(p.cm ?? "").trim() === "" ? null : Number(String(p.cm).replace(",", ".")),
+        color: String(p.color || "").trim(), estado_fisico: p.estadoFisico, descripcion: p.descripcion || "", obs: p.obs || "", precio: Number(p.precio),
       };
       const q = id ? supabase.from("productos").update(fila).eq("id", id).select().single() : supabase.from("productos").insert(fila).select().single();
       const { data, error } = await q;
@@ -218,6 +219,13 @@ export function crearAcciones({ db, me, recargar, toast }) {
       if (n) { auditar("Agregó fotos", p?.codigo, `${n} foto(s)`); toast(`${n} foto(s) agregada(s).`); }
       await recargar();
       return n;
+    },
+    async reorderPhotos(productId, ids, portada = false) {
+      const { error } = await supabase.rpc("ordenar_fotos", { p_producto: productId, p_ids: ids });
+      if (error) return fallo(error);
+      toast(portada ? "Portada cambiada." : "Orden de fotos guardado.");
+      await recargar();
+      return true;
     },
     async deletePhoto(photo, codigo) {
       const del = await supabase.from("producto_fotos").delete().eq("id", photo.id);

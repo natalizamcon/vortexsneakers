@@ -106,6 +106,10 @@ alter table public.productos add column if not exists baja_por    uuid;
 alter table public.productos drop constraint if exists productos_estado_check;
 alter table public.productos add constraint productos_estado_check
   check (estado in ('Disponible','Reservado','Vendido','Eliminado'));
+-- Largo de la zapatilla en centímetros (opcional)
+alter table public.productos add column if not exists cm numeric(4,1);
+alter table public.productos drop constraint if exists productos_cm_check;
+alter table public.productos add constraint productos_cm_check check (cm is null or (cm > 0 and cm < 100));
 
 create table if not exists public.producto_fotos (
   id          uuid primary key default gen_random_uuid(),
@@ -667,6 +671,22 @@ begin
   perform set_config('vortex.interno', 'si', true);
   update public.productos set estado = 'Disponible', baja_motivo = '', baja_en = null, baja_por = null where id = p_id;
   perform public._audit(v, 'Restauró par', p.codigo, 'Volvió a disponibles');
+end $$;
+
+-- Ordenar las fotos de un par: la primera es la portada
+create or replace function public.ordenar_fotos(p_producto uuid, p_ids uuid[])
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v uuid := public._exigir(array['admin','inventario']);
+  v_cod text;
+  i int;
+begin
+  select codigo into v_cod from public.productos where id = p_producto;
+  if not found then raise exception 'El par no existe.'; end if;
+  for i in 1 .. coalesce(array_length(p_ids, 1), 0) loop
+    update public.producto_fotos set orden = i - 1 where id = p_ids[i] and producto_id = p_producto;
+  end loop;
+  perform public._audit(v, 'Ordenó fotos', v_cod, 'Cambió la portada o el orden de las fotos');
 end $$;
 
 -- Agregar un destino de encomienda (lo pueden hacer administradores y vendedores)
