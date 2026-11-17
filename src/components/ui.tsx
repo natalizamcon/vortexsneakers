@@ -148,8 +148,17 @@ export const Note = ({ children, tone = "lila" }) => (
 
 
 /** Foto real del par (si tiene) o la ilustración de reemplazo */
-export function ProductPhoto({ p, className = "", idx = 0 }) {
+export function ProductPhoto({ p, className = "", idx = 0, fit = "cover" }) {
   const f = p.photos && p.photos[idx];
+  if (f && fit === "contain") {
+    // Foto completa, sin recortar; el espacio sobrante se rellena con la misma foto difuminada
+    return (
+      <div className={`relative w-full h-full overflow-hidden ${className}`}>
+        <img src={f.url} alt="" aria-hidden="true" className="absolute inset-0 w-full h-full object-cover scale-110 blur-xl opacity-60" />
+        <img src={f.url} alt={`${p.codigo} ${p.marca} ${p.modelo}`} className="relative w-full h-full object-contain" />
+      </div>
+    );
+  }
   if (f) return <img src={f.url} alt={`${p.codigo} ${p.marca} ${p.modelo}`} loading="lazy" className={`w-full h-full object-cover ${className}`} />;
   return <div className={`w-full h-full grid place-items-center ${className}`}><Sneaker hex={p.hex} className="w-4/5" /></div>;
 }

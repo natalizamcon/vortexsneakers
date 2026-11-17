@@ -1,14 +1,16 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight } from "lucide-react";
+import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm } from "../lib/utils";
 import { FORMATOS, ENCUADRE_INICIAL, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
+import { PhotoPicker, PhotoViewer } from "../components/photos";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
-export function ProductCard({ p, onClick, children, selected = undefined }) {
+export function ProductCard({ p, onClick, children, selected = undefined, onZoom = null }) {
   const selecting = selected !== undefined;
+  const verFotos = !selecting && onZoom && p.photos && p.photos.length > 0;
   return (
-    <div className={`bg-white rounded-xl border overflow-hidden transition-colors flex flex-col ${selected ? "border-purple-600 ring-2 ring-purple-600" : "border-slate-200 hover:border-cyan-400"}`}>
+    <div className={`relative bg-white rounded-xl border overflow-hidden transition-colors flex flex-col ${selected ? "border-purple-600 ring-2 ring-purple-600" : "border-slate-200 hover:border-cyan-400"}`}>
       <button onClick={onClick} className="text-left flex-1" aria-pressed={selecting ? selected : undefined}>
         <div className="relative aspect-video vx-photo overflow-hidden">
           <ProductPhoto p={p} />
@@ -19,7 +21,7 @@ export function ProductCard({ p, onClick, children, selected = undefined }) {
           )}
           <span className="absolute top-2 left-2 vx-d text-xs font-bold bg-white rounded-md px-1.5 py-0.5 text-slate-900">{p.codigo}</span>
           <span className="absolute top-2 right-2"><Pill>{p.estado}</Pill></span>
-          <span className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-slate-500 bg-white rounded px-1.5"><Camera size={11} />{p.fotos}</span>
+          {!verFotos && <span className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-slate-500 bg-white rounded px-1.5"><Camera size={11} />{p.fotos}</span>}
         </div>
         <div className="p-3">
           <div className="text-sm font-semibold text-slate-900 truncate">{p.marca} {p.modelo}</div>
@@ -30,6 +32,13 @@ export function ProductCard({ p, onClick, children, selected = undefined }) {
           </div>
         </div>
       </button>
+      {verFotos && (
+        <div className="absolute inset-x-0 top-0 aspect-video pointer-events-none">
+          <button onClick={onZoom} className="pointer-events-auto absolute bottom-2 right-2 flex items-center gap-1 text-xs font-semibold text-slate-800 bg-white rounded-md px-2 py-1 shadow" aria-label={`Ver las fotos de ${p.codigo} completas`}>
+            <ZoomIn size={13} /> Ver {p.photos.length > 1 ? `${p.photos.length} fotos` : "foto"}
+          </button>
+        </div>
+      )}
       {children}
     </div>
   );
@@ -41,6 +50,7 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
   const [f, setF] = useState({ origen: "Todos", talla: "Todas", marca: "Todas", max: "" });
   const [view, setView] = useState("cards");
   const [selecting, setSelecting] = useState(false);
+  const [visor, setVisor] = useState(null);
   const [sel, setSel] = useState(new Set());
   const marcas = ["Todas", ...new Set(db.products.map((p) => p.marca))];
   const tallas = ["Todas", ...[...new Set(db.products.map((p) => p.talla))].sort((a, b) => a - b).map(String)];
@@ -169,7 +179,7 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
             const r = tab === "Reservado" && db.reservations.find((x) => x.productId === p.id && x.estado === "Activa");
             const h = r ? (new Date(r.vence) - NOW) / 3600000 : 0;
             return (
-              <ProductCard key={p.id} p={p} selected={selecting ? sel.has(p.id) : undefined} onClick={() => (selecting ? alternar(p.id) : setDrawer(p.id))}>
+              <ProductCard key={p.id} p={p} onZoom={() => setVisor(p)} selected={selecting ? sel.has(p.id) : undefined} onClick={() => (selecting ? alternar(p.id) : setDrawer(p.id))}>
                 {r && (
                   <div className="border-t border-slate-100 p-3 bg-purple-50 space-y-2">
                     <div className="text-xs"><span className="font-semibold text-slate-900">{client(r.clienteId)?.nombre}</span><div className={h < 12 ? "text-rose-600 font-medium" : "text-slate-600"}>Vence en {h > 0 ? `${Math.floor(h)} h` : "0 h (vencida)"}{r.adelanto ? ` · adelanto ${bs0(r.adelanto)}` : ""}</div></div>
@@ -206,6 +216,7 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
         </Panel>
       )}
 
+      {visor && <PhotoViewer urls={visor.photos.map((f) => f.url)} title={`${visor.codigo} · ${visor.marca} ${visor.modelo}`} onClose={() => setVisor(null)} />}
       {selecting && (
         <>
           <div className="h-20" aria-hidden="true" />
@@ -269,8 +280,8 @@ export function DeleteProductsModal({ db, ids, onClose, onDone, actions }) {
 export function ProductDrawer({ db, id, onClose, setModal, actions, userName, client, can }) {
   const p = db.products.find((x) => x.id === id);
   const [photo, setPhoto] = useState(0);
+  const [visor, setVisor] = useState(false);
   const [busy, run] = useBusy();
-  const fileRef = useRef(null);
   if (!p) return null;
   const lot = db.lots.find((l) => l.id === p.lote) || { id: p.lote, nombre: "" };
   const res = db.reservations.find((r) => r.productId === p.id && r.estado === "Activa");
@@ -284,9 +295,7 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
     ids.splice(a, 0, x);
     run(async () => { if (await actions.reorderPhotos(p.id, ids, a === 0)) setPhoto(a); });
   };
-  const onFiles = (e) => {
-    const files = Array.from(e.target.files || []);
-    e.target.value = "";
+  const onFiles = (files) => {
     if (files.length) run(async () => { await actions.addPhotos(p.id, files); setPhoto(p.photos.length); });
   };
   return (
@@ -301,8 +310,10 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
         </div>
         <div className="p-5 space-y-5">
           <div>
-            <div className="relative aspect-video rounded-xl vx-photo overflow-hidden">
-              <ProductPhoto p={p} idx={cur} />
+            <div className="relative aspect-square sm:aspect-video rounded-xl vx-photo overflow-hidden">
+              <ProductPhoto p={p} idx={cur} fit="contain" />
+              {p.photos[cur] && <button className="absolute inset-0 cursor-zoom-in" onClick={() => setVisor(true)} aria-label="Ver la foto completa en pantalla grande" />}
+              {p.photos[cur] && <span className={`absolute top-2 ${can.inv ? "right-12" : "right-2"} pointer-events-none flex items-center gap-1 text-xs font-semibold bg-white text-slate-800 rounded-md px-2 py-1 shadow`}><ZoomIn size={13} /> Ampliar</span>}
               {cur === 0 && p.photos.length > 0 && <span className="absolute top-2 left-2 text-xs font-semibold bg-white text-slate-900 rounded-md px-2 py-0.5 flex items-center gap-1"><Star size={12} className="text-amber-500" /> Portada</span>}
               {can.inv && p.photos[cur] && (
                 <button className="absolute top-2 right-2 p-1.5 rounded-lg bg-white text-rose-600 shadow" aria-label="Eliminar esta foto" disabled={busy}
@@ -324,13 +335,9 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
                   {i === 0 && <span className="absolute top-0.5 left-0.5 bg-white rounded p-0.5"><Star size={10} className="text-amber-500" /></span>}
                 </button>
               ))}
-              {can.inv && (
-                <>
-                  <button disabled={busy} onClick={() => fileRef.current?.click()} className="w-16 h-12 shrink-0 rounded-lg border border-dashed border-slate-300 grid place-items-center text-slate-500 hover:border-cyan-500" aria-label="Agregar fotos"><ImagePlus size={18} /></button>
-                  <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={onFiles} />
-                </>
-              )}
+              {can.inv && <PhotoPicker compact disabled={busy} onFiles={onFiles} />}
             </div>
+            {visor && <PhotoViewer urls={p.photos.map((f) => f.url)} start={cur} title={`${p.codigo} · ${p.marca} ${p.modelo}`} onClose={() => setVisor(false)} />}
           </div>
           {p.estado !== "Eliminado" && (
             <Btn variant="lila" className="w-full" onClick={() => { onClose(); setModal({ type: "social", productId: p.id }); }}><Share2 size={15} /> Imagen para redes (precio, talla y cm)</Btn>
@@ -396,7 +403,7 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
     : { lote: ultimoLote?.id || "", marca: "", modelo: "", origen: "Americano", categoria: "Hombre", talla: 41, cm: "", color: "Blanco", estadoFisico: "Excelente", precio: "", descripcion: "", obs: "" });
   const [files, setFiles] = useState([]);
   const [busy, run] = useBusy();
-  const fileRef = useRef(null);
+  const [visorNuevo, setVisorNuevo] = useState(null);
   const lot = db.lots.find((l) => l.id === p.lote);
   const cost = edit ? pCost(edit) : lot ? lotTotal(lot) / lot.pares : 0;
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
@@ -417,15 +424,25 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
     <Modal wide title={edit ? `Editar ${edit.codigo}` : "Nuevo par"} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy || !ok} onClick={() => run(async () => { if (await actions.saveProduct(p, files, edit?.id || null)) onClose(); })}>{busy ? <Spinner /> : null} {edit ? "Guardar cambios" : "Agregar al inventario"}</Btn></>}>
       <div className="grid sm:grid-cols-3 gap-4">
         <div>
-          <button type="button" onClick={() => fileRef.current?.click()} className="w-full aspect-square rounded-xl border-2 border-dashed border-slate-300 hover:border-cyan-500 grid place-items-center text-center text-xs text-slate-500 p-3 overflow-hidden">
-            {previews.length ? <img src={previews[0]} alt="" className="w-full h-full object-cover rounded-lg" /> : <div><Camera size={24} className="mx-auto mb-1 text-slate-400" />{edit ? "Agregar más fotos" : "Toma o elige fotos"}<br />JPG, PNG o WEBP</div>}
-          </button>
-          <input ref={fileRef} type="file" accept="image/*" multiple className="hidden" onChange={(e) => { const nf = Array.from(e.target.files || []); e.target.value = ""; setFiles([...files, ...nf].slice(0, 8)); }} />
+          {previews.length ? (
+            <button type="button" onClick={() => setVisorNuevo(0)} className="relative w-full aspect-square rounded-xl overflow-hidden bg-slate-100" aria-label="Ver la portada en pantalla grande">
+              <img src={previews[0]} alt="Portada" className="w-full h-full object-contain" />
+              <span className="absolute top-2 right-2 flex items-center gap-1 text-xs font-semibold bg-white text-slate-800 rounded-md px-2 py-1 shadow"><ZoomIn size={13} /> Ampliar</span>
+            </button>
+          ) : (
+            <div className="w-full aspect-square rounded-xl border-2 border-dashed border-slate-300 grid place-items-center text-center text-xs text-slate-500 p-3">
+              <div><Camera size={24} className="mx-auto mb-1 text-slate-400" />{edit ? "Agrega más fotos" : "Saca una foto o elige de la galería"}</div>
+            </div>
+          )}
+          <div className="flex gap-2 mt-2">
+            <PhotoPicker disabled={files.length >= 8} max={8 - files.length} onFiles={(nf) => setFiles([...files, ...nf].slice(0, 8))} />
+          </div>
+          {visorNuevo !== null && <PhotoViewer urls={previews} start={visorNuevo} title="Fotos del par nuevo" onClose={() => setVisorNuevo(null)} />}
           {previews.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {previews.map((u, i) => (
                 <div key={u} className={`relative w-14 h-14 rounded-md overflow-hidden border-2 ${i === 0 ? "border-amber-400" : "border-transparent"}`}>
-                  <img src={u} alt="" className="w-full h-full object-cover" />
+                  <button type="button" className="w-full h-full" onClick={() => setVisorNuevo(i)} aria-label={`Ver foto ${i + 1}`}><img src={u} alt="" className="w-full h-full object-cover" /></button>
                   <button type="button" className="absolute top-0 right-0 bg-white rounded-bl p-0.5 text-rose-600" aria-label="Quitar foto" onClick={() => setFiles(files.filter((_, j) => j !== i))}><X size={12} /></button>
                   {i === 0
                     ? <span className="absolute bottom-0 inset-x-0 bg-amber-400 text-slate-900 text-xs font-semibold text-center leading-4">Portada</span>
