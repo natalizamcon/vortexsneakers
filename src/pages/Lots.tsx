@@ -4,6 +4,28 @@ import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, Cart
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV } from "../lib/utils";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
+/** Ganancia de un fardo: lo ya vendido + lo que falta vender a precio de lista − lo que costó el fardo */
+export function resumenLote(db, l) {
+  const ps = db.products.filter((p) => p.lote === l.id && p.estado !== "Eliminado");
+  const ids = new Set(db.products.filter((p) => p.lote === l.id).map((p) => p.id));
+  const items = db.sales.filter((s) => s.estado === "Activa").flatMap((s) => s.items).filter((i) => ids.has(i.productId));
+  const stock = ps.filter((p) => p.estado === "Disponible" || p.estado === "Reservado");
+  const vendido = sum(items, (i) => i.precio);
+  const ganVendido = sum(items, (i) => i.precio - i.costo);
+  const porVender = sum(stock, (p) => p.precio);
+  const ganPorVender = sum(stock, (p) => p.precio - pCost(p));
+  const inversion = lotTotal(l);
+  const total = vendido + porVender - inversion; // resultado del fardo completo (incluye pares sin cargar y eliminados)
+  const ganPares = ganVendido + ganPorVender;     // ganancia de los pares que están cargados si se venden todos
+  const costoPares = sum(items, (i) => i.costo) + sum(stock, pCost);
+  return {
+    ps, items, stock, vendido, ganVendido, porVender, ganPorVender, inversion, total, ganPares,
+    margen: costoPares ? Math.round((ganPares / costoPares) * 100) : 0,
+    sinCargar: Math.max(0, l.pares - ps.length - db.products.filter((p) => p.lote === l.id && p.estado === "Eliminado").length),
+    eliminados: db.products.filter((p) => p.lote === l.id && p.estado === "Eliminado").length,
+  };
+}
+
 export function Lots({ db, setModal, setDrawer, userName, can }) {
   const [abierto, setAbierto] = useState(null);
   return (
@@ -11,6 +33,17 @@ export function Lots({ db, setModal, setDrawer, userName, can }) {
       <PageHead title="Compras y lotes" route="/compras" desc="Cada fardo define el costo real de sus pares. Ese costo queda fijo en cada producto.">
         {can.inv && <Btn onClick={() => setModal({ type: "lot" })}><Plus size={15} /> Nuevo lote</Btn>}
       </PageHead>
+      {can.admin && db.lots.length > 0 && (() => {
+        const rs = db.lots.map((l) => resumenLote(db, l));
+        const tot = sum(rs, (r) => r.ganPares), inv = sum(rs, (r) => r.inversion), gan = sum(rs, (r) => r.ganVendido);
+        return (
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3 mb-4">
+            <Stat label="Invertido en todos los fardos" value={bs0(inv)} tone="slate" icon={Layers} />
+            <Stat label="Ganancia ya obtenida" value={bs0(gan)} sub="De los pares ya vendidos" tone="teal" />
+            <Stat label="Ganancia si se vende todo" value={bs0(tot)} sub="Lo vendido más lo que queda a precio de lista" tone="lila" />
+          </div>
+        );
+      })()}
       {!db.lots.length && <div className="bg-white rounded-xl border border-dashed border-slate-300 py-14 text-center text-sm text-slate-500">Todavía no hay lotes. Registra tu primera compra con “Nuevo lote”.</div>}
       <div className="grid md:grid-cols-2 gap-4">
         {db.lots.map((l) => {
@@ -18,6 +51,7 @@ export function Lots({ db, setModal, setDrawer, userName, can }) {
           const ps = db.products.filter((p) => p.lote === l.id && p.estado !== "Eliminado"), sold = ps.filter((p) => p.estado === "Vendido");
           const elim = db.products.filter((p) => p.lote === l.id && p.estado === "Eliminado").length;
           const ventas = sum(db.sales.filter((s) => s.estado === "Activa").flatMap((s) => s.items).filter((i) => ps.some((p) => p.id === i.productId)), (i) => i.precio);
+          const g = resumenLote(db, l);
           return (
             <Panel key={l.id} title={`${l.id} · ${l.nombre}`} sub={`${db.providers.find((x) => x.id === l.proveedorId)?.nombre} (${db.providers.find((x) => x.id === l.proveedorId)?.telefono}) · ${fdate(l.fecha)} · registró ${userName(l.socio)}`} action={<div className="flex items-center gap-1.5"><Pill tone="Americano">{l.origen.split(" (")[0]}</Pill>{can.inv && <button className="p-1.5 rounded-md text-slate-500 hover:bg-slate-100" aria-label={`Editar ${l.id}`} onClick={() => setModal({ type: "lot", edit: l })}><Pencil size={14} /></button>}</div>}>
               <div className="grid grid-cols-3 gap-2 text-sm vx-num">
@@ -28,6 +62,36 @@ export function Lots({ db, setModal, setDrawer, userName, can }) {
                 <div><div className="flex justify-between"><span>Vendidos</span><span className="vx-num">{sold.length}/{ps.length || l.pares}</span></div><div className="h-1.5 rounded-full bg-slate-100 mt-1"><div className="h-full rounded-full bg-cyan-500" style={{ width: (sold.length / (ps.length || l.pares)) * 100 + "%" }} /></div></div>
                 <div><div className="flex justify-between"><span>Recuperación del lote (ventas ÷ inversión)</span><span className="vx-num">{Math.round((ventas / lotTotal(l)) * 100)}%</span></div></div>
               </div>
+              {can.admin && (
+                <div className="mt-4 rounded-xl border border-slate-200 overflow-hidden text-sm">
+                  <div className="px-3 py-2 bg-slate-50 text-xs font-semibold text-slate-700">Ganancia de este fardo</div>
+                  <div className="divide-y divide-slate-100 vx-num">
+                    <div className="flex justify-between gap-3 px-3 py-2">
+                      <span className="text-slate-600">Ya vendido <span className="text-xs text-slate-400">({g.items.length} par{g.items.length === 1 ? "" : "es"} · {bs0(g.vendido)})</span></span>
+                      <span className="font-medium text-cyan-700">{bs0(g.ganVendido)}</span>
+                    </div>
+                    <div className="flex justify-between gap-3 px-3 py-2">
+                      <span className="text-slate-600">Por vender <span className="text-xs text-slate-400">({g.stock.length} par{g.stock.length === 1 ? "" : "es"} a precio de lista · {bs0(g.porVender)})</span></span>
+                      <span className="font-medium text-purple-700">{bs0(g.ganPorVender)}</span>
+                    </div>
+                    <div className={`flex justify-between gap-3 px-3 py-2.5 font-semibold ${g.ganPares < 0 ? "bg-rose-50 text-rose-700" : "bg-purple-50 text-purple-800"}`}>
+                      <span>Ganancia total si se vende todo</span>
+                      <span>{bs0(g.ganPares)} <span className="text-xs font-medium">({g.margen}% sobre su costo)</span></span>
+                    </div>
+                    {(g.sinCargar > 0 || g.eliminados > 0) && (
+                      <div className="flex justify-between gap-3 px-3 py-2 text-slate-600">
+                        <span>Resultado del fardo completo <span className="text-xs text-slate-400">(contra los {bs0(g.inversion)} que costó)</span></span>
+                        <span className={`font-medium ${g.total < 0 ? "text-rose-600" : "text-cyan-700"}`}>{bs0(g.total)}</span>
+                      </div>
+                    )}
+                  </div>
+                  <p className="px-3 py-2 text-xs text-slate-500">
+                    Precio de venta menos el costo real de cada par.
+                    {g.sinCargar > 0 && ` Faltan cargar ${g.sinCargar} par${g.sinCargar === 1 ? "" : "es"}: ya pagaste por ellos, pero todavía no tienen precio, por eso el resultado del fardo completo aún sale ${g.total < 0 ? "negativo" : "más bajo"}.`}
+                    {g.eliminados > 0 && ` El resultado del fardo completo incluye la pérdida de ${g.eliminados} par${g.eliminados === 1 ? "" : "es"} eliminado${g.eliminados === 1 ? "" : "s"}.`}
+                  </p>
+                </div>
+              )}
               {ps.length > 0 && (
                 <div className="mt-3">
                   <button className="text-xs font-semibold text-purple-700" aria-expanded={abierto === l.id} onClick={() => setAbierto(abierto === l.id ? null : l.id)}>{abierto === l.id ? "Ocultar pares" : `Ver los ${ps.length} pares de este lote`}</button>
