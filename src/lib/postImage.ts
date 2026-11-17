@@ -110,7 +110,11 @@ export type OpcionesImagen = {
   codigo: string;
   extra: string;       // línea opcional: "Envíos a todo Bolivia"
   mostrar: { precio: boolean; talla: boolean; cm: boolean; titulo: boolean; codigo: boolean };
+  // Cómo se acomoda la foto: x e y en fracción del lienzo (0 = centrada), zoom 1 = llena el lienzo
+  encuadre?: { x: number; y: number; zoom: number };
 };
+
+export const ENCUADRE_INICIAL = { x: 0, y: 0, zoom: 1 };
 
 /** Dibuja la imagen completa en el lienzo indicado */
 export async function dibujarImagen(canvas: HTMLCanvasElement, foto: any, o: OpcionesImagen) {
@@ -123,14 +127,25 @@ export async function dibujarImagen(canvas: HTMLCanvasElement, foto: any, o: Opc
   const M = 64 * u;                          // margen
   const top = o.formato === "historia" ? 150 * u : 0; // zona libre de la barra de historias
 
-  // 1. Foto a pantalla completa (recortada al centro)
+  // 1. Foto: fondo difuminado y encima la foto acomodada por el usuario
   ctx.fillStyle = INK;
   ctx.fillRect(0, 0, W, H);
   if (foto) {
     const fw = foto.width, fh = foto.height;
-    const s = Math.max(W / fw, H / fh);
-    const dw = fw * s, dh = fh * s;
-    ctx.drawImage(foto, (W - dw) / 2, (H - dh) / 2, dw, dh);
+    const cover = Math.max(W / fw, H / fh);
+    const e = o.encuadre || ENCUADRE_INICIAL;
+    const zoom = Math.min(3, Math.max(0.5, e.zoom || 1));
+    // Fondo: la misma foto llenando todo, difuminada y oscurecida (se ve si la foto no cubre el lienzo)
+    if (zoom < 1 || e.x || e.y) {
+      const bw = fw * cover * 1.1, bh = fh * cover * 1.1;
+      try { (ctx as any).filter = `blur(${Math.round(36 * u)}px)`; } catch {}
+      ctx.drawImage(foto, (W - bw) / 2, (H - bh) / 2, bw, bh);
+      try { (ctx as any).filter = "none"; } catch {}
+      ctx.fillStyle = "rgba(16,20,44,0.55)";
+      ctx.fillRect(0, 0, W, H);
+    }
+    const dw = fw * cover * zoom, dh = fh * cover * zoom;
+    ctx.drawImage(foto, (W - dw) / 2 + (e.x || 0) * W, (H - dh) / 2 + (e.y || 0) * H, dw, dh);
   }
 
   // 2. Sombras suaves arriba y abajo para que el texto se lea sobre cualquier foto

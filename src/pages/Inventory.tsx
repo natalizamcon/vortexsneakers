@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, useRef } from "react";
 import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm } from "../lib/utils";
-import { FORMATOS, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
+import { FORMATOS, ENCUADRE_INICIAL, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
 export function ProductCard({ p, onClick, children, selected = undefined }) {
@@ -476,7 +476,25 @@ export function SocialImageModal({ db, productId, onClose, toast }) {
   const [precio, setPrecio] = useState(p ? bs0(p.precio) : "");
   const [extra, setExtra] = useState("");
   const [mostrar, setMostrar] = useState({ precio: true, talla: true, cm: true, titulo: true, codigo: true });
+  const [encuadre, setEncuadre] = useState(ENCUADRE_INICIAL);
+  const arrastre = useRef(null);
   const [estado, setEstado] = useState("cargando");
+  const limitar = (v, a, b) => Math.min(b, Math.max(a, v));
+  const fijar = (e) => setEncuadre({ x: limitar(e.x, -0.9, 0.9), y: limitar(e.y, -0.9, 0.9), zoom: limitar(e.zoom, 0.5, 3) });
+  const empezar = (ev) => {
+    if (estado !== "listo") return;
+    ev.currentTarget.setPointerCapture?.(ev.pointerId);
+    const r = ev.currentTarget.getBoundingClientRect();
+    arrastre.current = { px: ev.clientX, py: ev.clientY, x: encuadre.x, y: encuadre.y, w: r.width, h: r.height };
+  };
+  const mover = (ev) => {
+    const a = arrastre.current;
+    if (!a) return;
+    fijar({ ...encuadre, x: a.x + (ev.clientX - a.px) / a.w, y: a.y + (ev.clientY - a.py) / a.h });
+  };
+  const soltar = () => { arrastre.current = null; };
+  const rueda = (ev) => { if (estado === "listo") fijar({ ...encuadre, zoom: encuadre.zoom * (ev.deltaY < 0 ? 1.06 : 0.94) }); };
+  const paso = (dx, dy) => fijar({ ...encuadre, x: encuadre.x + dx, y: encuadre.y + dy });
   const [busy, run] = useBusy();
   const foto = p?.photos?.[fotoIdx];
   const titulo = p ? `${p.marca} ${p.modelo}`.trim() : "";
@@ -493,7 +511,7 @@ export function SocialImageModal({ db, productId, onClose, toast }) {
         }
         if (!vivo || !canvasRef.current) return;
         await dibujarImagen(canvasRef.current, fotoRef.current.img, {
-          formato: formato as any, precio, talla: String(p.talla), cm: p.cm ? String(p.cm) : "", titulo, codigo: p.codigo, extra, mostrar,
+          formato: formato as any, precio, talla: String(p.talla), cm: p.cm ? String(p.cm) : "", titulo, codigo: p.codigo, extra, mostrar, encuadre,
         });
         if (vivo) setEstado("listo");
       } catch (e) {
@@ -501,7 +519,7 @@ export function SocialImageModal({ db, productId, onClose, toast }) {
       }
     })();
     return () => { vivo = false; };
-  }, [foto?.url, formato, precio, extra, mostrar.precio, mostrar.talla, mostrar.cm, mostrar.titulo, mostrar.codigo]);
+  }, [foto?.url, formato, precio, extra, mostrar.precio, mostrar.talla, mostrar.cm, mostrar.titulo, mostrar.codigo, encuadre.x, encuadre.y, encuadre.zoom]);
 
   if (!p) return null;
   const nombre = `${p.codigo}-vortex-${formato}.jpg`;
@@ -538,17 +556,36 @@ export function SocialImageModal({ db, productId, onClose, toast }) {
         <div className="grid sm:grid-cols-2 gap-4">
           <div>
             <div className="relative rounded-xl overflow-hidden bg-slate-900 mx-auto" style={{ aspectRatio: `${FORMATOS[formato].w} / ${FORMATOS[formato].h}`, maxHeight: "60vh" }}>
-              <canvas ref={canvasRef} className="w-full h-full object-contain" aria-label="Vista previa de la imagen para redes" />
+              <canvas ref={canvasRef} className={`w-full h-full object-contain ${estado === "listo" ? "cursor-grab active:cursor-grabbing" : ""}`} style={{ touchAction: "none" }}
+                aria-label="Vista previa: arrastra la foto para acomodarla"
+                onPointerDown={empezar} onPointerMove={mover} onPointerUp={soltar} onPointerCancel={soltar} onWheel={rueda} />
               {estado !== "listo" && (
                 <div className="absolute inset-0 grid place-items-center bg-slate-900 text-sm text-white p-4 text-center">
                   {estado === "cargando" ? <span className="flex items-center gap-2"><Spinner /> Preparando la imagen…</span> : estado}
                 </div>
               )}
             </div>
+            <div className="mt-3 rounded-xl border border-slate-200 p-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-medium text-slate-700">Acomodar la foto</span>
+                <button className="text-xs font-semibold text-purple-700 disabled:opacity-40" disabled={encuadre.x === 0 && encuadre.y === 0 && encuadre.zoom === 1} onClick={() => setEncuadre(ENCUADRE_INICIAL)}>Restablecer</button>
+              </div>
+              <p className="text-xs text-slate-500">Arrastra la foto con el dedo o el mouse. Usa el control para acercar o alejar.</p>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-slate-500 w-10">Alejar</span>
+                <input type="range" min="0.5" max="3" step="0.01" value={encuadre.zoom} onChange={(e) => fijar({ ...encuadre, zoom: Number(e.target.value) })} className="flex-1 accent-purple-700" aria-label="Tamaño de la foto" />
+                <span className="text-xs text-slate-500 w-10 text-right">Acercar</span>
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {[["Subir", 0, -0.04], ["Bajar", 0, 0.04], ["Izquierda", -0.04, 0], ["Derecha", 0.04, 0]].map(([l, dx, dy]) => (
+                  <button key={l as string} className="text-xs py-1.5 rounded-md border border-slate-200 hover:bg-slate-50" onClick={() => paso(dx, dy)}>{l}</button>
+                ))}
+              </div>
+            </div>
             {p.photos.length > 1 && (
               <div className="flex gap-2 mt-2 overflow-x-auto vx-noscroll">
                 {p.photos.map((f, i) => (
-                  <button key={f.id} onClick={() => setFotoIdx(i)} className={`relative w-14 h-11 shrink-0 rounded-md overflow-hidden border-2 ${fotoIdx === i ? "border-purple-700" : "border-transparent"}`} aria-label={i === 0 ? "Usar la portada" : `Usar la foto ${i + 1}`}>
+                  <button key={f.id} onClick={() => { setFotoIdx(i); setEncuadre(ENCUADRE_INICIAL); }} className={`relative w-14 h-11 shrink-0 rounded-md overflow-hidden border-2 ${fotoIdx === i ? "border-purple-700" : "border-transparent"}`} aria-label={i === 0 ? "Usar la portada" : `Usar la foto ${i + 1}`}>
                     <img src={f.url} alt="" className="w-full h-full object-cover" />
                     {i === 0 && <span className="absolute top-0.5 left-0.5 bg-white rounded p-0.5"><Star size={9} className="text-amber-500" /></span>}
                   </button>
