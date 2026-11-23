@@ -28,6 +28,12 @@ export function mensajeError(e: any): string {
   if (/Bucket not found/i.test(m)) return "Falta la carpeta de fotos “productos” en Supabase Storage.";
   if (/row-level security|permission denied/i.test(m)) return "No tienes permiso para esta acción.";
   if (/JWT expired/i.test(m)) return "Tu sesión venció. Vuelve a iniciar sesión.";
+  // La app es más nueva que la base de datos: falta ejecutar el último script de actualización
+  if (e?.code === "PGRST202" || /Could not find the function|schema cache/i.test(m)) {
+    const fn = (m.match(/function\s+public\.(\w+)/i) || [])[1];
+    return `Falta actualizar la base de datos${fn ? ` (no existe “${fn}”)` : ""}. En Supabase abre SQL Editor, ejecuta el último archivo de actualización y vuelve a intentarlo.`;
+  }
+  if (/column .* does not exist/i.test(m)) return "Falta actualizar la base de datos. En Supabase ejecuta el último archivo de actualización y recarga la página.";
   return m.replace(/^.*?ERROR:\s*/, "");
 }
 

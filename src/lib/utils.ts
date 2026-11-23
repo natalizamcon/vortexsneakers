@@ -86,12 +86,14 @@ export function computeMetrics(db) {
   const vendidas = active.filter((s) => !s.regalo);
   return {
     regalos: regalos.length, paresRegalo: itemsRegalo.length, valorRegalos: sum(itemsRegalo, (i) => itemLista(db, i)), costoRegalos: sum(itemsRegalo, (i) => i.costo),
+    // Pares vendidos (sin regalos) y su costo; la ganancia líquida = ventas − costo de lo vendido y regalado
+    paresVendidos: vendidas.reduce((n, s) => n + s.items.length, 0), costoVendidas: sum(vendidas, saleCost), liquida: bruta,
     total: P.length, disp: P.filter((p) => p.estado === "Disponible").length, res: P.filter((p) => p.estado === "Reservado").length,
     vend: P.filter((p) => p.estado === "Vendido").length, ventas, cobrado, cobradoVentas, adelantos, pendiente: ventas - cobradoVentas,
     costoVendido, gastos, otros, bruta, neta, costoBajas, nBajas: bajas.length, inversion, recuperado, porRecuperar: Math.max(0, inversion - recuperado),
     invCosto: sum(stock, pCost), invPrecio: sum(stock, (p) => p.precio),
     ventasHoy: sum(active.filter((s) => s.fecha === TODAY), saleTotal), ventasMes: sum(active.filter((s) => s.fecha.startsWith(TODAY.slice(0, 7))), saleTotal),
-    paresMes: sum(active.filter((s) => s.fecha.startsWith(TODAY.slice(0, 7))), (s) => s.items.length),
+    paresMes: sum(active.filter((s) => !s.regalo && s.fecha.startsWith(TODAY.slice(0, 7))), (s) => s.items.length),
     ticket: vendidas.length ? ventas / vendidas.length : 0, active,
   };
 }

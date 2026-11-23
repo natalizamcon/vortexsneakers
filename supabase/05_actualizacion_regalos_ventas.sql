@@ -258,3 +258,17 @@ begin
   perform public._audit(v, 'Modificó venta', p_venta, coalesce(nullif(array_to_string(v_cambios, '; '), ''), 'Sin cambios'));
   return jsonb_build_object('devuelto', v_devuelto);
 end $$;
+
+-- ---------------------------------------------------------------------
+-- Avisar a Supabase que hay funciones nuevas (para que la app las vea
+-- de inmediato) y mostrar el resultado
+-- ---------------------------------------------------------------------
+notify pgrst, 'reload schema';
+
+select
+  case when exists (select 1 from pg_proc where proname = 'editar_venta' and pronamespace = 'public'::regnamespace)
+        and exists (select 1 from pg_proc where proname = 'registrar_venta' and pronargs = 10 and pronamespace = 'public'::regnamespace)
+        and exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'ventas' and column_name = 'regalo')
+       then '✅ Actualización 05 aplicada correctamente. Ya puedes usar regalos y modificar ventas.'
+       else '❌ Algo no se aplicó. Copia este mensaje y avísame.'
+  end as resultado;

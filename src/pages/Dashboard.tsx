@@ -57,16 +57,16 @@ export function Dashboard({ db, m, go, userName, setModal }) {
           <p className="text-xs text-slate-500 mb-4">Cada cifra mide algo distinto. Ninguna se suma con otra.</p>
           <div className="grid sm:grid-cols-3 gap-3">
             {[
-              ["Ventas registradas", m.ventas, "Lo que se vendió, cobrado o no", "slate"],
+              ["Ventas registradas", m.ventas, `${m.paresVendidos} par${m.paresVendidos === 1 ? "" : "es"} vendido${m.paresVendidos === 1 ? "" : "s"} · ${m.paresRegalo} regalado${m.paresRegalo === 1 ? "" : "s"}`, "slate"],
               ["Dinero cobrado", m.cobrado, `Incluye ${bs0(m.adelantos)} en adelantos de reservas`, "teal"],
               ["Por cobrar", m.pendiente, `${owing.length} ventas con saldo`, "rose"],
-              ["Costo de lo vendido", m.costoVendido, m.costoRegalos > 0 ? `Incluye ${bs0(m.costoRegalos)} de pares regalados` : "Costo real de cada par vendido", "slate"],
-              ["Ganancia bruta", m.bruta, "Ventas − costo de lo vendido", "lila"],
-              ["Ganancia neta estimada", m.neta, m.costoBajas > 0 ? `Bruta − gastos (${bs0(m.gastos)}) − pares dados de baja (${bs0(m.costoBajas)})` : `Bruta − gastos (${bs0(m.gastos)})`, "lila"],
+              ["Costo de lo vendido", m.costoVendido, m.costoRegalos > 0 ? `Vendidos ${bs0(m.costoVendidas)} + regalos ${bs0(m.costoRegalos)}` : "Costo de fardo de cada par vendido", "slate"],
+              ["Regalos", m.costoRegalos, m.paresRegalo ? `${m.paresRegalo} par${m.paresRegalo === 1 ? "" : "es"} · se descuenta solo su costo de fardo` : "Todavía no hay regalos", "amber"],
+              ["Ganancia líquida", m.liquida, `Ventas − costo de lo vendido (con regalos). Después de gastos: ${bs0(m.neta)}`, "lila"],
             ].map(([l, v, s, t]) => (
               <div key={l} className="rounded-xl bg-slate-50 px-3 py-2.5">
                 <div className="text-xs text-slate-500">{l}</div>
-                <div className={`vx-d vx-num text-lg font-semibold ${t === "teal" ? "text-cyan-700" : t === "rose" ? "text-rose-600" : t === "lila" ? "text-purple-700" : "text-slate-900"}`}>{bs0(v)}</div>
+                <div className={`vx-d vx-num text-lg font-semibold ${t === "teal" ? "text-cyan-700" : t === "rose" ? "text-rose-600" : t === "lila" ? "text-purple-700" : t === "amber" ? "text-amber-700" : "text-slate-900"}`}>{bs0(v)}</div>
                 <div className="text-xs text-slate-500">{s}</div>
               </div>
             ))}
@@ -75,14 +75,11 @@ export function Dashboard({ db, m, go, userName, setModal }) {
       </section>
 
       {/* Inventario y ventas */}
-      <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Stat label="Pares disponibles" value={m.disp} sub={`de ${m.total} registrados`} tone="teal" icon={Package} />
         <Stat label="Pares reservados" value={m.res} sub={`${expiring.length} vencen en menos de 12 h`} tone="lila" icon={Clock} />
         <Stat label="Ventas de hoy" value={bs0(m.ventasHoy)} sub={`Mes: ${bs0(m.ventasMes)} · ${m.paresMes} pares`} tone="slate" icon={ShoppingBag} />
         <Stat label="Valor del inventario" value={bs0(m.invPrecio)} sub={`A precio de venta · a costo ${bs0(m.invCosto)}`} tone="slate" icon={Boxes} />
-        <div className="col-span-2 lg:col-span-1">
-          <Stat label="Regalos entregados" value={bs0(m.valorRegalos)} sub={m.paresRegalo ? `${m.paresRegalo} par${m.paresRegalo === 1 ? "" : "es"} a precio de lista · nos costaron ${bs0(m.costoRegalos)}` : "Todavía no hay regalos"} tone="amber" icon={Gift} />
-        </div>
       </section>
 
       <Panel title="Estado del inventario" sub={`${m.total} pares individuales`}>

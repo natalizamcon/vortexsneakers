@@ -1002,4 +1002,7 @@ begin
   end loop;
 end $$;
 
+-- Avisar a Supabase que hay funciones nuevas
+notify pgrst, 'reload schema';
+
 -- Fin. Ahora ejecuta 02_administrador.sql

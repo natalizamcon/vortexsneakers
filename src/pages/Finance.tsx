@@ -23,9 +23,11 @@ export function Finance({ db, m, setModal, userName, actions }) {
       <div className="grid lg:grid-cols-3 gap-4 mb-4">
         <Panel title="Estado de resultados" sub="¿Cuánto estamos ganando?">
           <div className="text-sm">
-            <Row l="Ventas registradas" v={m.ventas} /><Row l="Costo de los pares vendidos" v={m.costoVendido} minus />
-            <Row l="Ganancia bruta" v={m.bruta} strong tone="text-purple-700" /><Row l="Gastos operativos" v={m.gastos} minus />{m.costoBajas > 0 && <Row l={`Pares dados de baja (${m.nBajas})`} v={m.costoBajas} minus />}<Row l="Otros ingresos" v={m.otros} />
-            <Row l="Ganancia neta estimada" v={m.neta} strong tone="text-purple-700" />
+            <Row l={`Ventas registradas (${m.paresVendidos} pares)`} v={m.ventas} />
+            <Row l="Costo de los pares vendidos" v={m.costoVendidas} minus />
+            {m.paresRegalo > 0 && <Row l={`Regalos: costo de fardo (${m.paresRegalo} pares)`} v={m.costoRegalos} minus />}
+            <Row l="Ganancia líquida" v={m.liquida} strong tone="text-purple-700" /><Row l="Gastos operativos" v={m.gastos} minus />{m.costoBajas > 0 && <Row l={`Pares dados de baja (${m.nBajas})`} v={m.costoBajas} minus />}<Row l="Otros ingresos" v={m.otros} />
+            <Row l="Ganancia después de gastos" v={m.neta} strong tone="text-purple-700" />
           </div>
         </Panel>
         <Panel title="Flujo de dinero" sub="¿Cuánto dinero tenemos de verdad?">
