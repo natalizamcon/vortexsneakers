@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn } from "lucide-react";
+import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn, Gift } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm } from "../lib/utils";
+import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm, itemLista } from "../lib/utils";
 import { FORMATOS, ENCUADRE_INICIAL, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
 import { PhotoPicker, PhotoViewer } from "../components/photos";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
@@ -138,30 +138,37 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
       ) : tab === "Vendido" ? (
         <>
           <div className="grid grid-cols-3 gap-2 sm:gap-3 mb-4">
-            <Stat label="Pares vendidos" value={soldRows.length} tone="slate" icon={History} />
+            <Stat label="Pares vendidos" value={soldRows.length} sub={soldRows.some((r) => r.s.regalo) ? `${soldRows.filter((r) => r.s.regalo).length} fueron regalo` : null} tone="slate" icon={History} />
             <Stat label="Vendido" value={bs0(sum(soldRows, (r) => r.it.precio))} tone="lila" />
             <Stat label="Utilidad de esos pares" value={bs0(sum(soldRows, (r) => r.it.precio - r.it.costo))} tone="teal" />
           </div>
           <Panel>
-            <Table head={["Código", "Producto", "Talla", "Venta", "Fecha", "Cliente", "Precio vendido", "Costo", "Utilidad", "Vendió", "Pago"]} empty={!soldRows.length && "Todavía no hay pares vendidos con estos filtros."} mobile={soldRows.map(({ s, it, p }) => (
-              <MRow key={s.id + p.id} onClick={() => setDrawer(p.id)}>
-                <div className="flex gap-3 items-center">
-                  <Sneaker hex={p.hex} className="w-14 shrink-0" />
+            <Table head={["Código", "Producto", "Talla", "Venta", "Fecha", "Cliente", "Canal", "Precio vendido", "Costo", "Utilidad", "Pago", "Entrega", ""]} empty={!soldRows.length && "Todavía no hay pares vendidos con estos filtros."} mobile={soldRows.map(({ s, it, p }) => (
+              <MRow key={s.id + p.id}>
+                <button className="w-full text-left flex gap-3 items-center" onClick={() => setDrawer(p.id)} aria-label={`Ver ${p.codigo}`}>
+                  <div className="w-14 h-11 rounded-md overflow-hidden vx-photo shrink-0"><ProductPhoto p={p} /></div>
                   <div className="flex-1 min-w-0">
                     <div className="text-sm font-semibold truncate">{p.codigo} · {p.marca} {p.modelo}</div>
-                    <div className="text-xs text-slate-500 truncate">{client(s.clienteId)?.nombre} · {fdate(s.fecha)} · {userName(s.socio)}</div>
-                    <div className="mt-1"><Pill>{payState(db, s)}</Pill></div>
+                    <div className="text-xs text-slate-500 truncate">{client(s.clienteId)?.nombre} · {fdate(s.fecha)} · {s.canal}</div>
+                    <div className="mt-1 flex flex-wrap gap-1"><Pill>{payState(db, s)}</Pill><Pill tone={s.pedido === "Entregado" ? "Pagado" : "Pendiente"}>{s.pedido === "Entregado" ? "Entregado" : s.pedido}</Pill></div>
                   </div>
-                  <div className="text-right vx-num shrink-0"><div className="text-sm font-semibold">{bs0(it.precio)}</div><div className="text-xs text-cyan-700">+{bs0(it.precio - it.costo)}</div></div>
-                </div>
+                  <div className="text-right vx-num shrink-0">
+                    {s.regalo ? <div className="text-sm font-semibold text-amber-700 flex items-center gap-1 justify-end"><Gift size={13} /> {bs0(itemLista(db, it))}</div> : <div className="text-sm font-semibold">{bs0(it.precio)}</div>}
+                    <div className={`text-xs ${it.precio - it.costo < 0 ? "text-rose-600" : "text-cyan-700"}`}>{it.precio - it.costo < 0 ? "−" : "+"}{bs0(Math.abs(it.precio - it.costo))}</div>
+                  </div>
+                </button>
+                {can.admin && s.estado === "Activa" && <Btn size="sm" variant="outline" className="w-full mt-2" onClick={() => setModal({ type: "editSale", ventaId: s.id })}><Pencil size={13} /> Modificar (regalo, entrega, precio)</Btn>}
               </MRow>
             ))}>
               {soldRows.map(({ s, it, p }) => (
                 <tr key={s.id + p.id} className="hover:bg-slate-50 cursor-pointer" onClick={() => setDrawer(p.id)}>
                   <Td className="font-semibold vx-d">{p.codigo}</Td><Td>{p.marca} {p.modelo}<div className="text-xs text-slate-500">{p.color} · {p.origen}</div></Td><Td>{p.talla}</Td>
-                  <Td>{s.id}</Td><Td>{fdate(s.fecha)}</Td><Td>{client(s.clienteId)?.nombre}</Td>
-                  <Td className="vx-num font-medium">{bs(it.precio)}</Td><Td className="vx-num text-slate-500">{bs(it.costo)}</Td><Td className="vx-num text-cyan-700">{bs(it.precio - it.costo)}</Td>
-                  <Td>{userName(s.socio)}</Td><Td><Pill>{payState(db, s)}</Pill></Td>
+                  <Td>{s.id}</Td><Td>{fdate(s.fecha)}</Td><Td>{client(s.clienteId)?.nombre}</Td><Td>{s.canal}</Td>
+                  <Td className="vx-num font-medium">{s.regalo ? <span className="text-amber-700 flex items-center gap-1"><Gift size={13} /> Bs 0 <span className="text-xs font-normal">(valía {bs0(itemLista(db, it))})</span></span> : bs(it.precio)}</Td>
+                  <Td className="vx-num text-slate-500">{bs(it.costo)}</Td><Td className={`vx-num ${it.precio - it.costo < 0 ? "text-rose-600" : "text-cyan-700"}`}>{bs(it.precio - it.costo)}</Td>
+                  <Td><Pill>{payState(db, s)}</Pill></Td>
+                  <Td><Pill tone={s.pedido === "Entregado" ? "Pagado" : "Pendiente"}>{s.pedido}</Pill></Td>
+                  <Td>{can.admin && s.estado === "Activa" && <Btn size="sm" variant="outline" onClick={(e) => { e.stopPropagation(); setModal({ type: "editSale", ventaId: s.id }); }}><Pencil size={13} /> Modificar</Btn>}</Td>
                 </tr>
               ))}
             </Table>
@@ -362,7 +369,7 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
           )}
           {!can.admin && <div className="flex justify-between rounded-xl bg-slate-50 px-3 py-2 text-sm"><span className="text-slate-600">Precio de venta</span><span className="vx-num font-semibold">{bs(p.precio)}</span></div>}
           {res && <div className="rounded-xl bg-purple-50 p-3 text-sm"><div className="font-medium text-purple-900">Reservado para {client(res.clienteId)?.nombre}</div><div className="text-xs text-purple-700 mt-0.5">{res.id} · por {userName(res.socio)} · vence {ftime(res.vence)}{res.adelanto ? ` · adelanto ${bs(res.adelanto)}` : ""}</div></div>}
-          {sale && <div className="rounded-xl bg-slate-100 p-3 text-sm"><div className="font-medium">Vendido en {sale.id}</div><div className="text-xs text-slate-600 mt-0.5">{client(sale.clienteId)?.nombre} · {fdate(sale.fecha)} · {userName(sale.socio)} · {sale.canal}</div></div>}
+          {sale && <div className={`rounded-xl p-3 text-sm ${sale.regalo ? "bg-amber-50" : "bg-slate-100"}`}><div className="font-medium flex items-center gap-1.5">{sale.regalo ? <><Gift size={14} className="text-amber-600" /> Regalado en {sale.id}</> : <>Vendido en {sale.id}</>}</div><div className="text-xs text-slate-600 mt-0.5">{client(sale.clienteId)?.nombre} · {fdate(sale.fecha)} · {userName(sale.socio)} · {sale.canal}</div></div>}
           {can.sell && (
             <div className="grid grid-cols-2 gap-2">
               {p.estado === "Disponible" && <>

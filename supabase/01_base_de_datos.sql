@@ -37,7 +37,7 @@ create table if not exists public.perfiles (
 -- Configuración general (una sola fila)
 create table if not exists public.configuracion (
   id                 int primary key default 1 check (id = 1),
-  canales            text[] not null default array['Facebook Live','Publicación Facebook','Instagram','TikTok','WhatsApp'],
+  canales            text[] not null default array['Facebook Live','Publicación Facebook','Instagram','TikTok','WhatsApp','Tienda física','App VORTEX'],
   metodos            text[] not null default array['Efectivo','QR','Transferencia','Tarjeta'],
   destinos           text[] not null default array['La Paz','Santa Cruz','Oruro','Potosí','Chuquisaca (Sucre)','Tarija','Beni (Trinidad)','Pando (Cobija)','Cochabamba (provincias)'],
   vigencia_horas     int not null default 48,
@@ -175,6 +175,9 @@ create table if not exists public.venta_items (
 -- Un par solo puede estar en UNA venta activa (evita ventas duplicadas)
 create unique index if not exists venta_items_un_par on public.venta_items(producto_id) where activo;
 create index if not exists venta_items_venta_idx on public.venta_items(venta_id);
+-- Regalos: la venta se cierra en 0; se guarda el precio de lista para saber cuánto se regaló
+alter table public.ventas add column if not exists regalo boolean not null default false;
+alter table public.venta_items add column if not exists precio_lista numeric(12,2);
 
 create table if not exists public.pagos (
   id         uuid primary key default gen_random_uuid(),
@@ -397,10 +400,15 @@ begin
     format('%s vuelve a disponible%s', coalesce(v_cod, ''), case when r.adelanto > 0 then '; adelanto marcado como devuelto' else '' end));
 end $$;
 
--- Registrar una venta (directa o desde reservas)
+-- Registrar una venta (o un regalo). Bloquea los pares para que nadie más los venda al mismo tiempo.
+--  • p_regalo: el par se entrega sin cobrar (total 0, sin saldo pendiente). El adelanto de una
+--    reserva, si lo había, queda como devuelto.
+--  • p_entregado: la venta ya se entregó en el momento (por ejemplo, en la tienda).
+drop function if exists public.registrar_venta(uuid, text, jsonb, text[], numeric, text, jsonb, text);
 create or replace function public.registrar_venta(
   p_cliente uuid, p_canal text, p_items jsonb, p_reservas text[],
-  p_pago numeric, p_metodo text, p_entrega jsonb, p_obs text)
+  p_pago numeric, p_metodo text, p_entrega jsonb, p_obs text,
+  p_regalo boolean default false, p_entregado boolean default false)
 returns text language plpgsql security definer set search_path = public as $$
 declare
   v uuid := public._exigir(array['admin','vendedor']);
@@ -409,29 +417,33 @@ declare
   p record;
   v_total numeric;
   v_pagado numeric;
+  v_regalo boolean := coalesce(p_regalo, false);
   v_costo_envio numeric := coalesce(nullif(p_entrega->>'costo', '')::numeric, 0);
 begin
   if p_cliente is null then raise exception 'Elige un cliente.'; end if;
   if p_items is null or jsonb_array_length(p_items) = 0 then raise exception 'Agrega al menos un par a la venta.'; end if;
+  if v_regalo and coalesce(p_pago, 0) > 0 then raise exception 'Un regalo no lleva pago.'; end if;
 
   for it in select * from jsonb_to_recordset(p_items) as x(producto_id uuid, precio numeric) loop
     select * into p from public.productos where id = it.producto_id for update;
     if not found then raise exception 'Uno de los pares no existe.'; end if;
     if p.estado = 'Vendido' then raise exception '% ya fue vendido. Revisa la venta.', p.codigo; end if;
+    if p.estado = 'Eliminado' then raise exception '% fue eliminado del inventario.', p.codigo; end if;
     if p.estado = 'Reservado' and not exists (
       select 1 from public.reservas where producto_id = p.id and estado = 'Activa' and id = any(coalesce(p_reservas, '{}'::text[]))
     ) then
       raise exception '% está reservado para otro cliente.', p.codigo;
     end if;
-    if it.precio is null or it.precio < 0 then raise exception 'Revisa el precio de %.', p.codigo; end if;
+    if not v_regalo and (it.precio is null or it.precio < 0) then raise exception 'Revisa el precio de %.', p.codigo; end if;
   end loop;
 
   v_id := public._codigo('VTA-', nextval('public.seq_venta'), 4);
-  insert into public.ventas(id, fecha, cliente_id, canal, estado, obs, entrega, pedido, creado_por)
-  values (v_id, public.hoy(), p_cliente, coalesce(p_canal, ''), 'Activa', coalesce(p_obs, ''), coalesce(p_entrega, '{}'::jsonb), 'Pendiente de preparación', v);
+  insert into public.ventas(id, fecha, cliente_id, canal, estado, obs, entrega, pedido, regalo, creado_por)
+  values (v_id, public.hoy(), p_cliente, coalesce(p_canal, ''), 'Activa', coalesce(p_obs, ''), coalesce(p_entrega, '{}'::jsonb),
+          case when coalesce(p_entregado, false) then 'Entregado' else 'Pendiente de preparación' end, v_regalo, v);
 
-  insert into public.venta_items(venta_id, producto_id, precio, costo)
-  select v_id, x.producto_id, x.precio, pr.costo_compra + pr.costo_transporte
+  insert into public.venta_items(venta_id, producto_id, precio, costo, precio_lista)
+  select v_id, x.producto_id, case when v_regalo then 0 else x.precio end, pr.costo_compra + pr.costo_transporte, pr.precio
     from jsonb_to_recordset(p_items) as x(producto_id uuid, precio numeric)
     join public.productos pr on pr.id = x.producto_id;
 
@@ -441,8 +453,8 @@ begin
 
   update public.reservas set estado = 'Convertida', venta_id = v_id
    where id = any(coalesce(p_reservas, '{}'::text[])) and estado = 'Activa';
-  -- El adelanto de la reserva pasa a la venta (no se cuenta dos veces)
-  update public.pagos set venta_id = v_id
+  -- El adelanto de la reserva pasa a la venta (no se cuenta dos veces). Si es regalo, queda devuelto.
+  update public.pagos set venta_id = v_id, anulado = v_regalo
    where reserva_id = any(coalesce(p_reservas, '{}'::text[])) and not anulado and venta_id is null;
 
   select coalesce(sum(precio), 0) into v_total from public.venta_items where venta_id = v_id;
@@ -462,9 +474,69 @@ begin
     values (public.hoy(), 'Envío de ' || v_id, 'Delivery', v_costo_envio, 'Efectivo', v_id, v);
   end if;
 
-  perform public._audit(v, 'Registró venta', v_id,
-    format('%s par(es) — Bs %s — %s', jsonb_array_length(p_items), v_total, coalesce(p_canal, '')));
+  perform public._audit(v, case when v_regalo then 'Registró regalo' else 'Registró venta' end, v_id,
+    format('%s par(es) — Bs %s — %s%s', jsonb_array_length(p_items), v_total, coalesce(p_canal, ''),
+           case when coalesce(p_entregado, false) then ' — entregado en el momento' else '' end));
   return v_id;
+end $$;
+
+-- Modificar una venta ya registrada (solo administradores):
+-- marcarla o desmarcarla como regalo, corregir precios, canal y estado de la entrega.
+create or replace function public.editar_venta(p_venta text, p_regalo boolean, p_precios jsonb, p_canal text, p_pedido text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v uuid := public._exigir(array['admin']);
+  etapas text[] := array['Pendiente de preparación','Preparando','Listo para entregar','Enviado','Entregado'];
+  s record;
+  it record;
+  v_regalo boolean := coalesce(p_regalo, false);
+  v_total numeric;
+  v_pagado numeric;
+  v_devuelto numeric := 0;
+  v_antes numeric;
+  v_cambios text[] := '{}';
+begin
+  select * into s from public.ventas where id = p_venta for update;
+  if not found then raise exception 'La venta no existe.'; end if;
+  if s.estado <> 'Activa' then raise exception 'La venta está anulada; no se puede modificar.'; end if;
+  select coalesce(sum(precio), 0) into v_antes from public.venta_items where venta_id = p_venta and activo;
+  if p_pedido is not null and not (p_pedido = any(etapas)) then raise exception 'Estado de entrega no válido.'; end if;
+
+  if v_regalo then
+    update public.venta_items set precio = 0 where venta_id = p_venta and activo;
+    select coalesce(sum(monto), 0) into v_devuelto from public.pagos where venta_id = p_venta and not anulado;
+    update public.pagos set anulado = true where venta_id = p_venta and not anulado;
+    if not s.regalo then v_cambios := array_append(v_cambios, 'marcada como regalo'); end if;
+    if v_devuelto > 0 then v_cambios := array_append(v_cambios, format('pagos devueltos Bs %s', v_devuelto)); end if;
+  else
+    for it in select * from jsonb_to_recordset(coalesce(p_precios, '[]'::jsonb)) as x(id uuid, precio numeric) loop
+      if it.precio is null or it.precio < 0 then raise exception 'Revisa los precios: no pueden ser negativos.'; end if;
+      update public.venta_items set precio = it.precio where id = it.id and venta_id = p_venta and activo;
+    end loop;
+    select coalesce(sum(precio), 0) into v_total from public.venta_items where venta_id = p_venta and activo;
+    select coalesce(sum(monto), 0) into v_pagado from public.pagos where venta_id = p_venta and not anulado;
+    if v_pagado > v_total + 0.001 then
+      raise exception 'El total (Bs %) quedaría por debajo de lo ya cobrado (Bs %).', v_total, v_pagado;
+    end if;
+    if s.regalo then v_cambios := array_append(v_cambios, 'ya no es regalo'); end if;
+    if v_total <> v_antes then v_cambios := array_append(v_cambios, format('total Bs %s → Bs %s', v_antes, v_total)); end if;
+  end if;
+
+  if coalesce(nullif(trim(p_canal), ''), s.canal) <> s.canal then
+    v_cambios := array_append(v_cambios, 'canal: ' || s.canal || ' → ' || trim(p_canal));
+  end if;
+  if p_pedido is not null and p_pedido <> s.pedido then
+    v_cambios := array_append(v_cambios, 'entrega: ' || s.pedido || ' → ' || p_pedido);
+  end if;
+
+  update public.ventas
+     set regalo = v_regalo,
+         canal  = coalesce(nullif(trim(p_canal), ''), canal),
+         pedido = coalesce(p_pedido, pedido)
+   where id = p_venta;
+
+  perform public._audit(v, 'Modificó venta', p_venta, coalesce(nullif(array_to_string(v_cambios, '; '), ''), 'Sin cambios'));
+  return jsonb_build_object('devuelto', v_devuelto);
 end $$;
 
 -- Registrar un pago (total o parcial)

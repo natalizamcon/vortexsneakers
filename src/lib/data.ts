@@ -48,7 +48,7 @@ export async function cargarTodo(esAdmin: boolean) {
   const fotosPor = {};
   fotos.forEach((f) => { (fotosPor[f.producto_id] = fotosPor[f.producto_id] || []).push({ id: f.id, ruta: f.ruta, url: fotoUrl(f.ruta), orden: f.orden }); });
   const itemsPor = {};
-  items.forEach((i) => { (itemsPor[i.venta_id] = itemsPor[i.venta_id] || []).push({ id: i.id, productId: i.producto_id, precio: num(i.precio), costo: num(i.costo), activo: i.activo }); });
+  items.forEach((i) => { (itemsPor[i.venta_id] = itemsPor[i.venta_id] || []).push({ id: i.id, productId: i.producto_id, precio: num(i.precio), costo: num(i.costo), activo: i.activo, precioLista: i.precio_lista == null ? null : num(i.precio_lista) }); });
 
   const c = cfg.data || {};
   return {
@@ -71,7 +71,7 @@ export async function cargarTodo(esAdmin: boolean) {
       const e = s.entrega || {};
       return {
         id: s.id, fecha: s.fecha, clienteId: s.cliente_id, canal: s.canal, socio: s.creado_por, estado: s.estado, obs: s.motivo || s.obs || "",
-        items: itemsPor[s.id] || [], pedido: s.pedido,
+        items: itemsPor[s.id] || [], pedido: s.pedido, regalo: !!s.regalo,
         entrega: { tipo: e.tipo || "Recojo en punto", costo: num(e.costo), pagaCliente: !!e.pagaCliente, direccion: e.direccion || "", destino: e.destino || "", transportista: e.transportista || "", fechaEstimada: e.fechaEstimada || s.fecha },
       };
     }),
@@ -140,7 +140,21 @@ export function crearAcciones({ db, me, recargar, toast }) {
           transportista: data.transportista || "", fechaEstimada: recojo ? TODAY : data.fechaEnvio || addDays(TODAY, 1),
         },
         p_obs: data.obs || "",
-      }, (id) => `Venta ${id} registrada. El pedido quedó pendiente de preparación.`);
+        p_regalo: !!data.regalo, p_entregado: recojo && !!data.entregado,
+      }, (id) => data.regalo
+        ? `Regalo ${id} registrado${recojo && data.entregado ? " y entregado" : ""}.`
+        : recojo && data.entregado ? `Venta ${id} registrada y entregada.` : `Venta ${id} registrada. El pedido quedó pendiente de preparación.`);
+    },
+    async editSale(ventaId, cambios) {
+      const r = await rpc("editar_venta", {
+        p_venta: ventaId, p_regalo: !!cambios.regalo,
+        p_precios: cambios.regalo ? [] : (cambios.precios || []).map((x) => ({ id: x.id, precio: Number(x.precio) || 0 })),
+        p_canal: cambios.canal || null, p_pedido: cambios.pedido || null,
+      });
+      if (!r) return false;
+      const dev = Number(r?.devuelto) || 0;
+      toast(`${ventaId} actualizada.${dev > 0 ? ` Los pagos de ${bs(dev)} quedaron como devueltos.` : ""}`);
+      return true;
     },
     async pay(ventaId, monto, metodo) {
       return rpc("registrar_pago", { p_venta: ventaId, p_monto: Number(monto) || 0, p_metodo: metodo }, `Pago de ${bs(monto)} registrado en ${ventaId}.`);

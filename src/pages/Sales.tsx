@@ -1,38 +1,78 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star } from "lucide-react";
+import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Gift, PackageCheck } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV } from "../lib/utils";
+import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, itemLista, norm } from "../lib/utils";
+import { SearchBox } from "../components/search";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
 export function ClientPicker({ db, value, onChange, actions }) {
   const [adding, setAdding] = useState(false);
   const [busy, run] = useBusy();
   const [c, setC] = useState({ nombre: "", telefono: "", zona: "Cercado", direccion: "" });
-  const dup = c.telefono.replace(/\s+/g, "").length >= 7 && db.clients.find((x) => x.telefono === c.telefono.replace(/\s+/g, ""));
+  const tel = c.telefono.replace(/\s+/g, "");
+  const dup = tel.length >= 7 && db.clients.find((x) => x.telefono === tel);
+  const elegido = value && db.clients.find((x) => x.id === value);
+  // Compras por cliente y los más recientes primero (para mostrar sin escribir nada)
+  const compras = useMemo(() => {
+    const o = {};
+    db.sales.filter((x) => x.estado === "Activa").forEach((x) => { const k = x.clienteId; o[k] = o[k] || { n: 0, ult: "" }; o[k].n++; if (x.fecha > o[k].ult) o[k].ult = x.fecha; });
+    return o;
+  }, [db.sales]);
+  const recientes = useMemo(() => [...db.clients].sort((a, b) => String(compras[b.id]?.ult || b.fechaRegistro).localeCompare(String(compras[a.id]?.ult || a.fechaRegistro))), [db.clients, compras]);
+  const nuevo = (q = "") => {
+    const soloNumeros = /^[\d\s+]+$/.test(q.trim());
+    setC({ nombre: soloNumeros ? "" : q.trim(), telefono: soloNumeros ? q.replace(/\s+/g, "") : "", zona: "Cercado", direccion: "" });
+    setAdding(true);
+  };
+
   if (adding) return (
     <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 space-y-2">
-      <div className="grid grid-cols-2 gap-2"><Input placeholder="Nombre completo" value={c.nombre} onChange={(e) => setC({ ...c, nombre: e.target.value })} /><Input placeholder="Teléfono" value={c.telefono} onChange={(e) => setC({ ...c, telefono: e.target.value })} /></div>
+      <div className="text-xs font-semibold text-slate-700">Nuevo cliente</div>
+      <div className="grid grid-cols-2 gap-2"><Input placeholder="Nombre completo" value={c.nombre} onChange={(e) => setC({ ...c, nombre: e.target.value })} /><Input type="tel" inputMode="tel" placeholder="Teléfono" value={c.telefono} onChange={(e) => setC({ ...c, telefono: e.target.value })} /></div>
       {dup && <p className="text-xs text-rose-600">Ese teléfono ya pertenece a {dup.nombre}. <button className="underline" onClick={() => { onChange(dup.id); setAdding(false); }}>Usar ese cliente</button></p>}
-      <div className="flex gap-2 justify-end"><Btn size="sm" variant="ghost" onClick={() => setAdding(false)}>Volver</Btn><Btn size="sm" disabled={busy || !c.nombre.trim() || !c.telefono.trim() || !!dup} onClick={() => run(async () => { const n = await actions.addClient({ ...c, direccion: c.direccion || `Zona ${c.zona}, Cochabamba` }); if (n) { onChange(n.id); setAdding(false); } })}>Guardar cliente</Btn></div>
+      <div className="flex gap-2 justify-end"><Btn size="sm" variant="ghost" onClick={() => setAdding(false)}>Volver</Btn><Btn size="sm" disabled={busy || !c.nombre.trim() || !tel || !!dup} onClick={() => run(async () => { const n = await actions.addClient({ ...c, telefono: tel, direccion: c.direccion || `Zona ${c.zona}, Cochabamba` }); if (n) { onChange(n.id); setAdding(false); } })}>{busy ? <Spinner /> : null} Guardar cliente</Btn></div>
     </div>
   );
-  return (
-    <div className="flex gap-2">
-      <select className={inputCls} value={value} onChange={(e) => onChange(e.target.value)}>
-        <option value="">Elegir cliente…</option>
-        {db.clients.map((x) => <option key={x.id} value={x.id}>{x.nombre} · {x.telefono}</option>)}
-      </select>
-      <Btn variant="outline" onClick={() => setAdding(true)} aria-label="Nuevo cliente"><UserPlus size={15} /></Btn>
+
+  if (elegido) return (
+    <div className="flex items-center gap-3 rounded-xl border border-slate-200 px-3 py-2">
+      <div className="w-9 h-9 rounded-full vx-grad text-white grid place-items-center text-xs font-bold shrink-0">{elegido.nombre.split(" ").slice(0, 2).map((w) => w[0]).join("")}</div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-semibold truncate">{elegido.nombre}</div>
+        <div className="text-xs text-slate-500 truncate">{elegido.telefono}{elegido.zona ? ` · ${elegido.zona}` : ""}{compras[elegido.id] ? ` · ${compras[elegido.id].n} compra${compras[elegido.id].n === 1 ? "" : "s"}` : " · cliente nuevo"}</div>
+      </div>
+      <Btn size="sm" variant="outline" onClick={() => onChange("")}>Cambiar</Btn>
     </div>
+  );
+
+  return (
+    <SearchBox
+      items={db.clients} inicial={recientes} label="Buscar comprador"
+      getText={(x) => `${x.nombre} ${x.telefono} ${x.zona}`}
+      placeholder="Busca por nombre o teléfono"
+      sinResultados="Nadie coincide. Puedes registrarlo como cliente nuevo."
+      onPick={(x) => onChange(x.id)}
+      render={(x) => (
+        <div className="flex items-center justify-between gap-3">
+          <div className="min-w-0"><div className="text-sm font-medium truncate">{x.nombre}</div><div className="text-xs text-slate-500 truncate">{x.telefono}{x.zona ? ` · ${x.zona}` : ""}</div></div>
+          {compras[x.id] && <span className="text-xs text-slate-500 shrink-0">{compras[x.id].n} compra{compras[x.id].n === 1 ? "" : "s"}</span>}
+        </div>
+      )}
+      footer={(q) => (
+        <button type="button" onClick={() => nuevo(q)} className="w-full flex items-center gap-2 px-3 py-2.5 text-sm font-semibold text-purple-700 hover:bg-purple-50">
+          <UserPlus size={15} /> {q.trim() ? `Registrar “${q.trim()}” como cliente nuevo` : "Registrar un cliente nuevo"}
+        </button>
+      )}
+    />
   );
 }
 
 export const envioInicial = (db) => ({ entrega: "Delivery Cochabamba", delivery: 12, pagaCliente: false, direccion: "", destino: db.config.destinos[0] || "", fechaEnvio: addDays(TODAY, 1), transportista: "" });
 
-export function DeliveryFields({ db, d, setD, actions }) {
+export function DeliveryFields({ db, d, setD, actions, entregadoOpcion = false }) {
   const [adding, setAdding] = useState(false);
   const [nuevo, setNuevo] = useState("");
-  const setTipo = (t) => setD({ ...d, entrega: t, delivery: t === "Recojo en punto" ? 0 : t === "Encomienda" ? 25 : 12, pagaCliente: t === "Encomienda" });
+  const setTipo = (t) => setD({ ...d, entrega: t, delivery: t === "Recojo en punto" ? 0 : t === "Encomienda" ? 25 : 12, pagaCliente: t === "Encomienda", entregado: t === "Recojo en punto" ? d.entregado : false });
   const saveDestino = async () => { const n = nuevo.trim(); if (await actions.addDestino(n)) { setD({ ...d, destino: n }); setNuevo(""); setAdding(false); } };
   return (
     <div className="rounded-xl border border-slate-200 p-3 space-y-3">
@@ -62,6 +102,14 @@ export function DeliveryFields({ db, d, setD, actions }) {
           <Field label="Costo de envío (Bs)"><Input type="number" value={d.delivery} onChange={(e) => setD({ ...d, delivery: e.target.value })} /></Field>
           <Field label="¿Quién paga el envío?"><Select value={d.pagaCliente ? "c" : "n"} onChange={(e) => setD({ ...d, pagaCliente: e.target.value === "c" })} options={[{ value: "n", label: "El negocio (gasto)" }, { value: "c", label: "El cliente" }]} /></Field>
         </div>
+      ) : entregadoOpcion ? (
+        <label className={`flex items-start gap-3 rounded-lg px-3 py-2.5 cursor-pointer ${d.entregado ? "bg-cyan-50 ring-1 ring-cyan-200" : "bg-slate-50"}`}>
+          <input type="checkbox" className="mt-0.5 w-5 h-5 accent-purple-700" checked={!!d.entregado} onChange={(e) => setD({ ...d, entregado: e.target.checked })} />
+          <span>
+            <span className="block text-sm font-semibold text-slate-900 flex items-center gap-1.5"><PackageCheck size={16} className="text-cyan-700" /> Ya se entregó</span>
+            <span className="block text-xs text-slate-500">La venta se hizo y el cliente se llevó el par en ese momento (por ejemplo, en la tienda). No queda como pedido pendiente.</span>
+          </span>
+        </label>
       ) : <p className="text-xs text-slate-500">El cliente recoge el par en el punto de entrega. No hay costo de envío.</p>}
       {d.entrega === "Delivery Cochabamba" && <Field label="Dirección de entrega"><Input value={d.direccion} placeholder="Si se deja vacío, se usa la dirección del cliente" onChange={(e) => setD({ ...d, direccion: e.target.value })} /></Field>}
       {d.entrega === "Encomienda" && <Field label="Empresa de encomienda (opcional)"><Input value={d.transportista} placeholder="Ej.: flota o empresa de transporte" onChange={(e) => setD({ ...d, transportista: e.target.value })} /></Field>}
@@ -91,48 +139,154 @@ export function ReserveModal({ db, productId, onClose, actions }) {
   );
 }
 
+/** Línea de un par dentro de una venta */
+function ItemLinea({ p, precio, onPrecio, regalo, onQuitar = null, lista = null }) {
+  return (
+    <div className="flex items-center gap-3 p-2.5">
+      <div className="w-12 h-10 rounded-md overflow-hidden vx-photo shrink-0"><ProductPhoto p={p} /></div>
+      <div className="flex-1 min-w-0">
+        <div className="text-sm font-medium truncate">{p.codigo} · {p.marca} {p.modelo}</div>
+        <div className="text-xs text-slate-500 truncate">Talla {p.talla} · lista {bs0(lista ?? p.precio)} · costo {bs(pCost(p))}</div>
+      </div>
+      {regalo
+        ? <span className="w-24 text-right text-sm font-semibold text-amber-700 flex items-center justify-end gap-1"><Gift size={14} /> Bs 0</span>
+        : <input className={inputCls + " w-24 text-right"} type="number" inputMode="decimal" min="0" value={precio} onChange={(e) => onPrecio(e.target.value)} aria-label={`Precio final de ${p.codigo}`} />}
+      {onQuitar && <button className="p-1 text-slate-400 hover:text-rose-500" onClick={onQuitar} aria-label={`Quitar ${p.codigo}`}><X size={16} /></button>}
+    </div>
+  );
+}
+
+/** Interruptor para marcar la operación como regalo */
+function RegaloSwitch({ value, onChange }) {
+  return (
+    <button type="button" role="switch" aria-checked={value} onClick={() => onChange(!value)}
+      className={`w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-left border ${value ? "bg-amber-50 border-amber-300" : "bg-white border-slate-200 hover:bg-slate-50"}`}>
+      <Gift size={20} className={value ? "text-amber-600" : "text-slate-400"} />
+      <span className="flex-1">
+        <span className="block text-sm font-semibold text-slate-900">Es un regalo</span>
+        <span className="block text-xs text-slate-500">Se cierra en Bs 0 y no queda saldo pendiente. Su valor se muestra aparte en el dashboard.</span>
+      </span>
+      <span className={`w-10 h-6 rounded-full p-0.5 transition-colors ${value ? "bg-amber-500" : "bg-slate-300"}`}><span className={`block w-5 h-5 rounded-full bg-white shadow transition-transform ${value ? "translate-x-4" : ""}`} /></span>
+    </button>
+  );
+}
+
 export function SellModal({ db, init, onClose, actions }) {
   const [items, setItems] = useState((init.productIds || []).map((id) => ({ productId: id, precio: db.products.find((p) => p.id === id).precio })));
   const res = (init.reservaIds || []).map((r) => db.reservations.find((x) => x.id === r)).filter(Boolean);
   const adelanto = sum(res, (r) => r.adelanto);
-  const [d, setD] = useState({ clienteId: init.clienteId || "", canal: res[0]?.canal || db.config.canales[0] || "", pago: "", metodo: "QR", obs: "", ...envioInicial(db), ...(res[0]?.envio || {}) });
-  const [add, setAdd] = useState("");
+  const [d, setD] = useState({ clienteId: init.clienteId || "", canal: res[0]?.canal || db.config.canales[0] || "", pago: "", metodo: "QR", obs: "", regalo: false, entregado: false, ...envioInicial(db), ...(res[0]?.envio || {}) });
   const [busy, run] = useBusy();
-  const total = sum(items, (i) => Number(i.precio) || 0);
-  const saldo = total - adelanto - (Number(d.pago) || 0);
+  const ps = items.map((i) => db.products.find((x) => x.id === i.productId)).filter(Boolean);
+  const total = d.regalo ? 0 : sum(items, (i) => Number(i.precio) || 0);
+  const pago = d.regalo ? 0 : Number(d.pago) || 0;
+  const saldo = d.regalo ? 0 : total - adelanto - pago;
+  const valorRegalo = sum(ps, (p) => p.precio), costoRegalo = sum(ps, pCost);
   const avail = db.products.filter((p) => p.estado === "Disponible" && !items.some((i) => i.productId === p.id));
+  const tienda = (c) => /tienda/i.test(c);
+  const setCanal = (c) => setD(tienda(c) ? { ...d, canal: c, entrega: "Recojo en punto", delivery: 0, pagaCliente: false, entregado: true } : { ...d, canal: c });
+  const canales = [...new Set([...db.config.canales, d.canal].filter(Boolean))];
+  const titulo = res.length ? `Convertir ${res[0].id} en ${d.regalo ? "regalo" : "venta"}` : d.regalo ? "Nuevo regalo" : "Nueva venta";
   return (
-    <Modal wide title={res.length ? `Convertir ${res[0].id} en venta` : "Nueva venta"} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy || !items.length || !d.clienteId || saldo < 0} onClick={() => run(async () => { if (await actions.sell({ ...d, items, reservaIds: init.reservaIds })) onClose(); })}>{busy ? <Spinner /> : null} Registrar venta</Btn></>}>
-      <Field label="Cliente"><ClientPicker db={db} value={d.clienteId} onChange={(v) => setD({ ...d, clienteId: v })} actions={actions} /></Field>
+    <Modal wide title={titulo} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn variant={d.regalo ? "lila" : "primary"} disabled={busy || !items.length || !d.clienteId || saldo < 0} onClick={() => run(async () => { if (await actions.sell({ ...d, pago, items, reservaIds: init.reservaIds })) onClose(); })}>{busy ? <Spinner /> : d.regalo ? <Gift size={15} /> : null} {d.regalo ? "Registrar regalo" : "Registrar venta"}</Btn></>}>
+      <Field label={d.regalo ? "¿Para quién es el regalo?" : "Comprador"}><ClientPicker db={db} value={d.clienteId} onChange={(v) => setD({ ...d, clienteId: v })} actions={actions} /></Field>
       <div>
-        <div className="text-xs font-medium text-slate-600 mb-1">Pares de esta venta</div>
+        <div className="text-xs font-medium text-slate-600 mb-1">Pares {d.regalo ? "del regalo" : "de esta venta"}</div>
         <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
-          {items.map((it, k) => { const p = db.products.find((x) => x.id === it.productId); return (
-            <div key={it.productId} className="flex items-center gap-3 p-2.5">
-              <div className="w-12 h-10 rounded-md overflow-hidden vx-photo shrink-0"><ProductPhoto p={p} /></div>
-              <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate">{p.codigo} · {p.marca} {p.modelo}</div><div className="text-xs text-slate-500">Talla {p.talla} · lista {bs0(p.precio)} · costo {bs(pCost(p))}</div></div>
-              <input className={inputCls + " w-24 text-right"} type="number" value={it.precio} onChange={(e) => setItems(items.map((x, j) => (j === k ? { ...x, precio: e.target.value } : x)))} aria-label="Precio final" />
-              {!res.length && <button className="p-1 text-slate-400 hover:text-rose-500" onClick={() => setItems(items.filter((_, j) => j !== k))} aria-label="Quitar"><X size={16} /></button>}
-            </div>); })}
-          <div className="flex gap-2 p-2.5">
-            <select className={inputCls} value={add} onChange={(e) => setAdd(e.target.value)}><option value="">Agregar otro par disponible…</option>{avail.map((p) => <option key={p.id} value={p.id}>{p.codigo} · {p.marca} {p.modelo} · T{p.talla} · {bs0(p.precio)}</option>)}</select>
-            <Btn variant="outline" disabled={!add} onClick={() => { setItems([...items, { productId: add, precio: db.products.find((p) => p.id === add).precio }]); setAdd(""); }}><Plus size={15} /></Btn>
+          {items.map((it, k) => { const p = ps.find((x) => x.id === it.productId); return p && (
+            <ItemLinea key={it.productId} p={p} precio={it.precio} regalo={d.regalo}
+              onPrecio={(v) => setItems(items.map((x, j) => (j === k ? { ...x, precio: v } : x)))}
+              onQuitar={res.length ? null : () => setItems(items.filter((_, j) => j !== k))} />); })}
+          <div className="p-2.5">
+            <SearchBox
+              items={avail} label="Agregar otro par"
+              placeholder={items.length ? "Agregar otro par para este comprador: código, marca, talla…" : "Busca el par: código, marca, modelo o talla"}
+              sinResultados="No hay pares disponibles que coincidan."
+              getText={(p) => `${p.codigo} ${p.marca} ${p.modelo} talla ${p.talla} t${p.talla} ${p.color} ${p.cm || ""}`}
+              onPick={(p) => setItems([...items, { productId: p.id, precio: p.precio }])}
+              render={(p) => (
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-8 rounded overflow-hidden vx-photo shrink-0"><ProductPhoto p={p} /></div>
+                  <div className="flex-1 min-w-0"><div className="text-sm font-medium truncate">{p.codigo} · {p.marca} {p.modelo}</div><div className="text-xs text-slate-500 truncate">Talla {p.talla}{p.cm ? ` · ${String(p.cm).replace(".", ",")} cm` : ""} · {p.color}</div></div>
+                  <span className="text-sm font-semibold vx-num shrink-0">{bs0(p.precio)}</span>
+                </div>
+              )}
+            />
           </div>
         </div>
       </div>
-      <div className="grid sm:grid-cols-3 gap-3">
-        <Field label="Canal"><Select value={d.canal} onChange={(e) => setD({ ...d, canal: e.target.value })} options={db.config.canales} /></Field>
-        <Field label="Pago ahora"><Input type="number" placeholder="0" value={d.pago} onChange={(e) => setD({ ...d, pago: e.target.value })} /></Field>
-        <Field label="Método"><Select value={d.metodo} onChange={(e) => setD({ ...d, metodo: e.target.value })} options={db.config.metodos} /></Field>
+      <RegaloSwitch value={d.regalo} onChange={(v) => setD({ ...d, regalo: v, pago: v ? "" : d.pago })} />
+      <div className={`grid gap-3 ${d.regalo ? "" : "sm:grid-cols-3"}`}>
+        <Field label="Canal o punto de venta"><Select value={d.canal} onChange={(e) => setCanal(e.target.value)} options={canales} /></Field>
+        {!d.regalo && <Field label="Pago ahora"><Input type="number" inputMode="decimal" placeholder="0" value={d.pago} onChange={(e) => setD({ ...d, pago: e.target.value })} /></Field>}
+        {!d.regalo && <Field label="Método"><Select value={d.metodo} onChange={(e) => setD({ ...d, metodo: e.target.value })} options={db.config.metodos} /></Field>}
       </div>
-      <DeliveryFields db={db} d={d} setD={setD} actions={actions} />
-      <div className="rounded-xl bg-slate-50 p-3 text-sm space-y-1 vx-num">
-        <div className="flex justify-between"><span>Total de la venta</span><span className="font-semibold">{bs(total)}</span></div>
-        {adelanto > 0 && <div className="flex justify-between text-cyan-700"><span>Adelanto de la reserva (ya cobrado)</span><span>− {bs(adelanto)}</span></div>}
-        <div className="flex justify-between text-cyan-700"><span>Pago ahora</span><span>− {bs(Number(d.pago) || 0)}</span></div>
-        <div className={`flex justify-between font-semibold pt-1 border-t border-slate-200 ${saldo < 0 ? "text-rose-600" : ""}`}><span>Saldo pendiente</span><span>{bs(saldo)}</span></div>
+      <DeliveryFields db={db} d={d} setD={setD} actions={actions} entregadoOpcion />
+      {d.regalo ? (
+        <div className="rounded-xl bg-amber-50 p-3 text-sm space-y-1 vx-num">
+          <div className="flex justify-between"><span>Valor del regalo (precio de lista)</span><span className="font-semibold">{bs(valorRegalo)}</span></div>
+          <div className="flex justify-between text-slate-600"><span>Lo que le cuesta al negocio</span><span>{bs(costoRegalo)}</span></div>
+          <div className="flex justify-between font-semibold pt-1 border-t border-amber-200"><span>Se cobra</span><span>Bs 0,00 · sin saldo pendiente</span></div>
+        </div>
+      ) : (
+        <div className="rounded-xl bg-slate-50 p-3 text-sm space-y-1 vx-num">
+          <div className="flex justify-between"><span>Total de la venta</span><span className="font-semibold">{bs(total)}</span></div>
+          {adelanto > 0 && <div className="flex justify-between text-cyan-700"><span>Adelanto de la reserva (ya cobrado)</span><span>− {bs(adelanto)}</span></div>}
+          <div className="flex justify-between text-cyan-700"><span>Pago ahora</span><span>− {bs(pago)}</span></div>
+          <div className={`flex justify-between font-semibold pt-1 border-t border-slate-200 ${saldo < 0 ? "text-rose-600" : ""}`}><span>Saldo pendiente</span><span>{bs(saldo)}</span></div>
+        </div>
+      )}
+      {adelanto > 0 && (d.regalo
+        ? <Note tone="rose">La reserva tenía un adelanto de {bs(adelanto)}. Al registrarla como regalo, ese adelanto queda como devuelto al cliente.</Note>
+        : <Note tone="teal">El adelanto pasa a esta venta. No se registra como un cobro nuevo, para no contarlo dos veces.</Note>)}
+    </Modal>
+  );
+}
+
+/** Modificar una venta ya registrada: regalo, precios, canal y estado de la entrega */
+export function EditSaleModal({ db, ventaId, onClose, actions, client }) {
+  const s = db.sales.find((x) => x.id === ventaId);
+  const [busy, run] = useBusy();
+  const [regalo, setRegalo] = useState(!!s?.regalo);
+  const [precios, setPrecios] = useState(() => Object.fromEntries((s?.items || []).map((it) => [it.id, s.regalo ? itemLista(db, it) : it.precio])));
+  const [canal, setCanal] = useState(s?.canal || "");
+  const [pedido, setPedido] = useState(s?.pedido || ESTADOS_PEDIDO[0]);
+  if (!s) return null;
+  const items = s.items.filter((it) => it.activo !== false);
+  const pagado = paidOf(db, s.id);
+  const total = regalo ? 0 : sum(items, (it) => Number(precios[it.id]) || 0);
+  const bajoCobrado = !regalo && total + 0.001 < pagado;
+  const canales = [...new Set([...db.config.canales, s.canal].filter(Boolean))];
+  const c = client(s.clienteId);
+  const guardar = () => run(async () => {
+    if (await actions.editSale(s.id, { regalo, precios: items.map((it) => ({ id: it.id, precio: precios[it.id] })), canal, pedido })) onClose();
+  });
+  return (
+    <Modal wide title={`Modificar ${s.id}`} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy || bajoCobrado} onClick={guardar}>{busy ? <Spinner /> : null} Guardar cambios</Btn></>}>
+      <div className="text-sm text-slate-600">{c?.nombre} · {fdate(s.fecha)} · {s.canal}</div>
+      <RegaloSwitch value={regalo} onChange={(v) => {
+        setRegalo(v);
+        if (!v && s.regalo) setPrecios(Object.fromEntries(items.map((it) => [it.id, itemLista(db, it)])));
+      }} />
+      <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
+        {items.map((it) => { const p = db.products.find((x) => x.id === it.productId); return p && (
+          <ItemLinea key={it.id} p={p} lista={itemLista(db, it)} precio={precios[it.id]} regalo={regalo} onPrecio={(v) => setPrecios({ ...precios, [it.id]: v })} />); })}
       </div>
-      {adelanto > 0 && <Note tone="teal">El adelanto pasa a esta venta. No se registra como un cobro nuevo, para no contarlo dos veces.</Note>}
+      {regalo && pagado > 0 && <Note tone="rose">Esta venta tiene {bs(pagado)} cobrados. Al marcarla como regalo, esos pagos quedan como devueltos y dejan de contar como dinero cobrado.</Note>}
+      {!regalo && (
+        <div className="rounded-xl bg-slate-50 p-3 text-sm space-y-1 vx-num">
+          <div className="flex justify-between"><span>Nuevo total</span><span className="font-semibold">{bs(total)}</span></div>
+          <div className="flex justify-between text-cyan-700"><span>Ya cobrado</span><span>{bs(pagado)}</span></div>
+          <div className={`flex justify-between font-semibold pt-1 border-t border-slate-200 ${bajoCobrado ? "text-rose-600" : ""}`}><span>Saldo pendiente</span><span>{bs(total - pagado)}</span></div>
+          {bajoCobrado && <p className="text-xs text-rose-600">El total no puede quedar por debajo de lo ya cobrado. Sube el precio o márcala como regalo.</p>}
+        </div>
+      )}
+      <div className="grid sm:grid-cols-2 gap-3">
+        <Field label="Canal o punto de venta"><Select value={canal} onChange={(e) => setCanal(e.target.value)} options={canales} /></Field>
+        <Field label="Estado de la entrega"><Select value={pedido} onChange={(e) => setPedido(e.target.value)} options={ESTADOS_PEDIDO} /></Field>
+      </div>
+      {pedido !== "Entregado" && <Btn variant="outline" className="w-full" onClick={() => setPedido("Entregado")}><PackageCheck size={15} /> Marcar como ya entregado</Btn>}
+      <p className="text-xs text-slate-500">Cada cambio queda anotado en Actividad con tu nombre.</p>
     </Modal>
   );
 }
@@ -212,7 +366,7 @@ export function Reservations({ db, actions, setModal, client, prod, userName }) 
 export function Sales({ db, m, setModal, client, userName, can }) {
   const [f, setF] = useState("Todas");
   const [q, setQ] = useState("");
-  const list = [...db.sales].reverse().filter((s) => (f === "Todas" || payState(db, s) === f) && (`${s.id} ${client(s.clienteId)?.nombre}`.toLowerCase().includes(q.toLowerCase())));
+  const list = [...db.sales].reverse().filter((s) => (f === "Todas" || payState(db, s) === f) && norm(`${s.id} ${client(s.clienteId)?.nombre} ${client(s.clienteId)?.telefono} ${s.canal}`).includes(norm(q)));
   return (
     <div>
       <PageHead title="Ventas" route="/ventas" desc="Una venta se registra una vez; los pagos se suman a ella hasta saldarla.">
@@ -224,8 +378,8 @@ export function Sales({ db, m, setModal, client, userName, can }) {
         <Stat label="Saldo por cobrar" value={bs0(m.pendiente)} tone="rose" />
       </div>
       <div className="flex flex-col sm:flex-row gap-2 mb-3">
-        <div className="relative flex-1"><Search size={16} className="absolute left-3 top-2.5 text-slate-400" /><input className={inputCls + " pl-9"} placeholder="Buscar por número o cliente" value={q} onChange={(e) => setQ(e.target.value)} /></div>
-        <div className="flex gap-1 bg-white border border-slate-200 rounded-lg p-1 overflow-x-auto">{["Todas", "Pendiente", "Parcial", "Pagado", "Reembolsado"].map((k) => <button key={k} onClick={() => setF(k)} className={`px-3 py-1 text-sm rounded-md whitespace-nowrap ${f === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>{k}</button>)}</div>
+        <div className="relative flex-1"><Search size={16} className="absolute left-3 top-2.5 text-slate-400" /><input className={inputCls + " pl-9"} placeholder="Buscar por número, cliente, teléfono o canal" value={q} onChange={(e) => setQ(e.target.value)} /></div>
+        <div className="flex gap-1 bg-white border border-slate-200 rounded-lg p-1 overflow-x-auto">{["Todas", "Pendiente", "Parcial", "Pagado", "Regalo", "Reembolsado"].map((k) => <button key={k} onClick={() => setF(k)} className={`px-3 py-1 text-sm rounded-md whitespace-nowrap ${f === k ? "bg-slate-900 text-white" : "text-slate-600"}`}>{k}</button>)}</div>
       </div>
       <Panel>
         <Table head={["Venta", "Fecha", "Cliente", "Pares", "Total", "Cobrado", "Saldo", "Pago", "Canal", "Socio", ""]} empty={!list.length && "No hay ventas con este filtro."} mobile={list.map((s) => { const t = saleTotal(s), pd = paidOf(db, s.id), st = payState(db, s); return (
@@ -236,7 +390,7 @@ export function Sales({ db, m, setModal, client, userName, can }) {
                 <div className="min-w-0"><div className="text-sm truncate">{client(s.clienteId)?.nombre}</div><div className="text-xs text-slate-500 truncate">{s.items.map((i) => db.products.find((p) => p.id === i.productId)?.codigo).join(", ")} · {s.canal}</div></div>
                 <div className="text-right vx-num shrink-0"><div className="text-sm font-semibold">{bs0(t)}</div>{s.estado === "Activa" && t - pd > 0 && <div className="text-xs text-rose-600">Saldo {bs0(t - pd)}</div>}</div>
               </div>
-              {s.estado === "Activa" && <div className="flex gap-2 mt-2">{t - pd > 0 && <Btn size="sm" className="flex-1" onClick={() => setModal({ type: "pay", ventaId: s.id })}>Registrar pago</Btn>}{can.admin && <Btn size="sm" variant="outline" onClick={() => setModal({ type: "void", ventaId: s.id })}>Anular</Btn>}</div>}
+              {s.estado === "Activa" && <div className="flex gap-2 mt-2">{t - pd > 0 && <Btn size="sm" className="flex-1" onClick={() => setModal({ type: "pay", ventaId: s.id })}>Registrar pago</Btn>}{can.admin && <Btn size="sm" variant="outline" onClick={() => setModal({ type: "editSale", ventaId: s.id })}><Pencil size={13} /> Modificar</Btn>}{can.admin && <Btn size="sm" variant="outline" onClick={() => setModal({ type: "void", ventaId: s.id })}>Anular</Btn>}</div>}
             </div>
           </MRow>); })}>
           {list.map((s) => { const t = saleTotal(s), pd = paidOf(db, s.id), st = payState(db, s); return (
@@ -245,7 +399,7 @@ export function Sales({ db, m, setModal, client, userName, can }) {
               <Td>{s.items.map((i) => db.products.find((p) => p.id === i.productId)?.codigo).join(", ")}</Td>
               <Td className="vx-num font-medium">{bs(t)}</Td><Td className="vx-num text-cyan-700">{bs(s.estado === "Anulada" ? 0 : pd)}</Td><Td className="vx-num text-rose-600">{s.estado === "Anulada" ? "—" : bs(t - pd)}</Td>
               <Td><Pill>{st}</Pill></Td><Td>{s.canal}</Td><Td>{userName(s.socio)}</Td>
-              <Td>{s.estado === "Activa" && <div className="flex gap-1.5">{t - pd > 0 && <Btn size="sm" onClick={() => setModal({ type: "pay", ventaId: s.id })}>Registrar pago</Btn>}{can.admin && <Btn size="sm" variant="ghost" onClick={() => setModal({ type: "void", ventaId: s.id })}>Anular</Btn>}</div>}</Td>
+              <Td>{s.estado === "Activa" && <div className="flex gap-1.5">{t - pd > 0 && <Btn size="sm" onClick={() => setModal({ type: "pay", ventaId: s.id })}>Registrar pago</Btn>}{can.admin && <Btn size="sm" variant="outline" onClick={() => setModal({ type: "editSale", ventaId: s.id })}><Pencil size={13} /> Modificar</Btn>}{can.admin && <Btn size="sm" variant="ghost" onClick={() => setModal({ type: "void", ventaId: s.id })}>Anular</Btn>}</div>}</Td>
             </tr>); })}
         </Table>
       </Panel>
@@ -308,6 +462,7 @@ export function OrderDetail({ db, ventaId, onClose, actions, client, userName, s
   const e = s.entrega;
   return (
     <Modal wide title={`Pedido ${s.id}`} onClose={onClose} footer={<>
+      {can.admin && s.estado === "Activa" && <Btn variant="outline" onClick={() => setModal({ type: "editSale", ventaId })}><Pencil size={15} /> Modificar</Btn>}
       {saldo > 0 && can.sell && <Btn variant="outline" onClick={() => setModal({ type: "pay", ventaId })}><CreditCard size={15} /> Registrar pago</Btn>}
       {idx < ESTADOS_PEDIDO.length - 1 ? <Btn onClick={() => actions.advanceOrder(s.id)}>Pasar a {ESTADOS_PEDIDO[idx + 1].toLowerCase()}</Btn> : <Btn variant="ghost" onClick={onClose}>Cerrar</Btn>}
     </>}>
@@ -367,6 +522,7 @@ export function OrderDetail({ db, ventaId, onClose, actions, client, userName, s
           {!db.payments.some((x) => x.ventaId === s.id) && <p className="text-xs text-slate-400">Sin pagos todavía.</p>}
         </div>
         <div className="rounded-xl bg-slate-50 p-3 vx-num space-y-1">
+          {s.regalo && <div className="flex justify-between text-amber-700 font-semibold"><span className="flex items-center gap-1"><Gift size={14} /> Regalo · valor</span><span>{bs(sum(s.items, (it) => itemLista(db, it)))}</span></div>}
           <div className="flex justify-between"><span>Total</span><span className="font-semibold">{bs(total)}</span></div>
           <div className="flex justify-between text-cyan-700"><span>Cobrado</span><span>{bs(pd)}</span></div>
           <div className={`flex justify-between font-semibold ${saldo > 0 ? "text-rose-600" : "text-cyan-700"}`}><span>Saldo</span><span>{bs(saldo)}</span></div>

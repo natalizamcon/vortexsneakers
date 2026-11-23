@@ -55,6 +55,7 @@ export const saleCost = (s) => sum(s.items, (x) => x.costo);
 export const paidOf = (db, ventaId) => sum(db.payments.filter((p) => p.ventaId === ventaId && !p.anulado), (p) => p.monto);
 export const payState = (db, s) => {
   if (s.estado === "Anulada") return db.payments.some((p) => p.ventaId === s.id) ? "Reembolsado" : "Anulada";
+  if (s.regalo) return "Regalo";
   const paid = paidOf(db, s.id), t = saleTotal(s);
   return paid >= t ? "Pagado" : paid > 0 ? "Parcial" : "Pendiente";
 };
@@ -79,14 +80,19 @@ export function computeMetrics(db) {
   const inversion = sum(db.lots, lotTotal);
   const recuperado = Math.max(0, cobrado + otros - gastos);
   const stock = P.filter((p) => p.estado !== "Vendido");
+  // Regalos: no suman a ventas, pero su costo sí cuenta en el costo de lo vendido
+  const regalos = active.filter((s) => s.regalo);
+  const itemsRegalo = regalos.flatMap((s) => s.items);
+  const vendidas = active.filter((s) => !s.regalo);
   return {
+    regalos: regalos.length, paresRegalo: itemsRegalo.length, valorRegalos: sum(itemsRegalo, (i) => itemLista(db, i)), costoRegalos: sum(itemsRegalo, (i) => i.costo),
     total: P.length, disp: P.filter((p) => p.estado === "Disponible").length, res: P.filter((p) => p.estado === "Reservado").length,
     vend: P.filter((p) => p.estado === "Vendido").length, ventas, cobrado, cobradoVentas, adelantos, pendiente: ventas - cobradoVentas,
     costoVendido, gastos, otros, bruta, neta, costoBajas, nBajas: bajas.length, inversion, recuperado, porRecuperar: Math.max(0, inversion - recuperado),
     invCosto: sum(stock, pCost), invPrecio: sum(stock, (p) => p.precio),
     ventasHoy: sum(active.filter((s) => s.fecha === TODAY), saleTotal), ventasMes: sum(active.filter((s) => s.fecha.startsWith(TODAY.slice(0, 7))), saleTotal),
     paresMes: sum(active.filter((s) => s.fecha.startsWith(TODAY.slice(0, 7))), (s) => s.items.length),
-    ticket: active.length ? ventas / active.length : 0, active,
+    ticket: vendidas.length ? ventas / vendidas.length : 0, active,
   };
 }
 
@@ -100,6 +106,10 @@ export const colorHex = (nombre) => {
   const parecido = [...COLORS].sort((a, b) => b[0].length - a[0].length).find((c) => t.includes(c[0].toLowerCase()));
   return parecido ? parecido[1] : "#cbd5e1";
 };
+/** Precio de lista de un par vendido (lo que valía al venderse) */
+export const itemLista = (db, it) => (it.precioLista != null ? it.precioLista : db.products.find((p) => p.id === it.productId)?.precio || 0);
+/** Quita tildes y pasa a minúsculas para buscar sin importar cómo se escribió */
+export const norm = (t) => String(t ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 /** "27" → "27 cm" ; vacío → "" */
 export const fcm = (cm) => (cm ? `${String(cm).replace(".", ",")} cm` : "");
 export const ROLES = { admin: "Administrador", vendedor: "Vendedor", inventario: "Encargado de inventario" };

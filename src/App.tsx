@@ -10,7 +10,7 @@ import { Logo, Btn } from "./components/ui";
 import { Login, Cargando, SinConfigurar, SinAcceso } from "./pages/Login";
 import { Dashboard } from "./pages/Dashboard";
 import { Inventory, ProductDrawer, ProductModal, DeleteProductsModal, SocialImageModal } from "./pages/Inventory";
-import { ReserveModal, SellModal, PayModal, VoidModal, Reservations, Sales, Orders, OrderDetail } from "./pages/Sales";
+import { ReserveModal, SellModal, PayModal, VoidModal, Reservations, Sales, Orders, OrderDetail, EditSaleModal } from "./pages/Sales";
 import { Lots, LotModal, ProviderModal } from "./pages/Lots";
 import { Clients, ClientModal, ClientDetail } from "./pages/Clients";
 import { Finance, ExpenseModal, IncomeModal } from "./pages/Finance";
@@ -304,6 +304,7 @@ function Sistema({ perfil }) {
       {modal?.type === "client" && <ClientModal {...ctx} edit={modal.edit || null} onClose={() => setModal(null)} />}
       {modal?.type === "lot" && <LotModal {...ctx} edit={modal.edit || null} onClose={() => setModal(null)} />}
       {modal?.type === "provider" && <ProviderModal {...ctx} edit={modal.edit} onClose={() => setModal(null)} />}
+      {modal?.type === "editSale" && <EditSaleModal {...ctx} ventaId={modal.ventaId} onClose={() => setModal(null)} />}
       {modal?.type === "social" && <SocialImageModal {...ctx} productId={modal.productId} onClose={() => setModal(null)} />}
       {modal?.type === "deleteProducts" && <DeleteProductsModal {...ctx} ids={modal.ids} onDone={modal.onDone} onClose={() => setModal(null)} />}
       {modal?.type === "product" && <ProductModal {...ctx} edit={modal.edit || null} onClose={() => setModal(null)} />}

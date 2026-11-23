@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star } from "lucide-react";
+import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Gift } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV } from "../lib/utils";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
@@ -60,7 +60,7 @@ export function Dashboard({ db, m, go, userName, setModal }) {
               ["Ventas registradas", m.ventas, "Lo que se vendió, cobrado o no", "slate"],
               ["Dinero cobrado", m.cobrado, `Incluye ${bs0(m.adelantos)} en adelantos de reservas`, "teal"],
               ["Por cobrar", m.pendiente, `${owing.length} ventas con saldo`, "rose"],
-              ["Costo de lo vendido", m.costoVendido, "Costo real de cada par vendido", "slate"],
+              ["Costo de lo vendido", m.costoVendido, m.costoRegalos > 0 ? `Incluye ${bs0(m.costoRegalos)} de pares regalados` : "Costo real de cada par vendido", "slate"],
               ["Ganancia bruta", m.bruta, "Ventas − costo de lo vendido", "lila"],
               ["Ganancia neta estimada", m.neta, m.costoBajas > 0 ? `Bruta − gastos (${bs0(m.gastos)}) − pares dados de baja (${bs0(m.costoBajas)})` : `Bruta − gastos (${bs0(m.gastos)})`, "lila"],
             ].map(([l, v, s, t]) => (
@@ -75,11 +75,14 @@ export function Dashboard({ db, m, go, userName, setModal }) {
       </section>
 
       {/* Inventario y ventas */}
-      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <section className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <Stat label="Pares disponibles" value={m.disp} sub={`de ${m.total} registrados`} tone="teal" icon={Package} />
         <Stat label="Pares reservados" value={m.res} sub={`${expiring.length} vencen en menos de 12 h`} tone="lila" icon={Clock} />
         <Stat label="Ventas de hoy" value={bs0(m.ventasHoy)} sub={`Mes: ${bs0(m.ventasMes)} · ${m.paresMes} pares`} tone="slate" icon={ShoppingBag} />
         <Stat label="Valor del inventario" value={bs0(m.invPrecio)} sub={`A precio de venta · a costo ${bs0(m.invCosto)}`} tone="slate" icon={Boxes} />
+        <div className="col-span-2 lg:col-span-1">
+          <Stat label="Regalos entregados" value={bs0(m.valorRegalos)} sub={m.paresRegalo ? `${m.paresRegalo} par${m.paresRegalo === 1 ? "" : "es"} a precio de lista · nos costaron ${bs0(m.costoRegalos)}` : "Todavía no hay regalos"} tone="amber" icon={Gift} />
+        </div>
       </section>
 
       <Panel title="Estado del inventario" sub={`${m.total} pares individuales`}>
