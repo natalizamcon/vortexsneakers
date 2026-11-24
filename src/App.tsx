@@ -10,6 +10,7 @@ import { Logo, Btn } from "./components/ui";
 import { Cargando, SinConfigurar, SinAcceso } from "./pages/Login";
 import { Tienda } from "./pages/Tienda";
 import { QrManagerModal, QrAssignModal, QrViewModal } from "./pages/Qr";
+import { RevisarPagoModal } from "./pages/Pagos";
 import { Dashboard } from "./pages/Dashboard";
 import { Inventory, ProductDrawer, ProductModal, DeleteProductsModal, SocialImageModal } from "./pages/Inventory";
 import { ReserveModal, SellModal, PayModal, VoidModal, Reservations, Sales, Orders, OrderDetail, EditSaleModal } from "./pages/Sales";
@@ -111,6 +112,7 @@ function Sistema({ perfil }) {
   const pendiente = useRef(false);
   const ultimaLiberacion = useRef(0);
   const pedidosWeb = useRef(null);
+  const comprobantesVistos = useRef(null);
 
   const toast = useCallback((msg, tone = "ok") => {
     const id = Math.random();
@@ -142,6 +144,18 @@ function Sistema({ perfil }) {
         }
       }
       pedidosWeb.current = ahora;
+      // Aviso cuando un cliente sube su comprobante de pago
+      const enRevision = new Set(nuevo.comprobantes.filter((c) => c.estado === "En revisión").map((c) => c.id));
+      if (comprobantesVistos.current) {
+        const c = nuevo.comprobantes.find((x) => enRevision.has(x.id) && !comprobantesVistos.current.has(x.id));
+        if (c) {
+          const cl = nuevo.clients.find((x) => x.id === c.clienteId);
+          const msg = `${cl ? cl.nombre : "Un cliente"} subió su comprobante de pago (${c.pedido}). Revísalo en Reservas.`;
+          toast(msg);
+          try { if ("Notification" in window && Notification.permission === "granted") new Notification("VORTEX · Comprobante de pago", { body: msg, icon: "/icon-192.png" }); } catch {}
+        }
+      }
+      comprobantesVistos.current = enRevision;
       setDb(nuevo);
       setCargado(true);
       yaCargo.current = true;
@@ -220,7 +234,7 @@ function Sistema({ perfil }) {
   if (vistaCliente) return <Tienda vistaPrevia cuenta={null} onCuentaCambio={() => {}} onSalirVista={() => { setVistaCliente(false); window.scrollTo(0, 0); }} />;
 
   const ctx = { db, m, me, actions, setModal, setDrawer, go, userName, client, prod, toast, can, rol };
-  const badges = { agenda: alerts.length, reservas: db.reservations.filter((r) => r.estado === "Activa").length, pedidos: db.sales.filter((s) => s.estado === "Activa" && s.pedido !== "Entregado").length };
+  const badges = { agenda: alerts.length, reservas: db.reservations.filter((r) => r.estado === "Activa").length + db.comprobantes.filter((c) => c.estado === "En revisión").length, pedidos: db.sales.filter((s) => s.estado === "Activa" && s.pedido !== "Entregado").length };
   const Page = PAGINAS[page];
   const iniciales = (perfil.nombre || perfil.email || "?").split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase();
   const pedirAvisos = () => { if ("Notification" in window && Notification.permission === "default") Notification.requestPermission(); };
@@ -353,6 +367,7 @@ function Sistema({ perfil }) {
       {modal?.type === "editSale" && <EditSaleModal {...ctx} ventaId={modal.ventaId} onClose={() => setModal(null)} />}
       {modal?.type === "social" && <SocialImageModal {...ctx} productId={modal.productId} onClose={() => setModal(null)} />}
       {modal?.type === "deleteProducts" && <DeleteProductsModal {...ctx} ids={modal.ids} onDone={modal.onDone} onClose={() => setModal(null)} />}
+      {modal?.type === "revisarPago" && <RevisarPagoModal {...ctx} comprobanteId={modal.comprobanteId} onClose={() => setModal(null)} />}
       {modal?.type === "qrManager" && <QrManagerModal {...ctx} onClose={() => setModal(null)} />}
       {modal?.type === "qrAssign" && <QrAssignModal {...ctx} ids={modal.ids} onDone={modal.onDone} onClose={() => setModal(null)} />}
       {modal?.type === "qrView" && <QrViewModal {...ctx} qrId={modal.qrId} onClose={() => setModal(null)} />}

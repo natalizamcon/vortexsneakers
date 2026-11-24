@@ -3,9 +3,9 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ShoppingBag, Search, X, ZoomIn, Check, Plus, Trash2, Store, Truck, Package, Clock, LogOut, User,
-  CheckCircle2, AlertTriangle, ChevronRight, MapPin, RefreshCw, QrCode, Download, Eye, ArrowLeft,
+  CheckCircle2, AlertTriangle, ChevronRight, MapPin, RefreshCw, QrCode, Download, Eye, ArrowLeft, Upload, Camera, FileText,
 } from "lucide-react";
-import { supabase, fotoUrl, mensajeError } from "../lib/supabase";
+import { supabase, fotoUrl, mensajeError, comprimirImagen, BUCKET_COMPROBANTES } from "../lib/supabase";
 import { bs0, fcm, colorHex, norm, ftime, fdate, DEPARTAMENTOS } from "../lib/utils";
 import { Logo, Isotipo, Btn, Field, Input, Select, inputCls, Modal, PasswordInput, ProductPhoto, Spinner, Pill, useBusy } from "../components/ui";
 import { PhotoViewer } from "../components/photos";
@@ -14,10 +14,10 @@ const BOLSA_KEY = "vx-bolsa";
 const leer = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
 const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} };
 
+// Solo dos formas de entrega, siempre por paquetería
 const ENTREGAS = [
-  { k: "Recojo en punto", titulo: "Recoger en tienda", desc: "Pasas por el par en Cochabamba.", icon: Store },
-  { k: "Delivery Cochabamba", titulo: "Envío a domicilio", desc: "Te lo llevamos dentro de Cochabamba.", icon: Truck },
-  { k: "Encomienda", titulo: "Recoger en paquetería", desc: "Lo enviamos por encomienda a tu ciudad y lo recoges ahí.", icon: Package },
+  { k: "cochabamba", titulo: "Paquetería en Cochabamba", desc: "Lo dejamos en una paquetería de Cochabamba y lo recoges ahí.", icon: Package },
+  { k: "envio", titulo: "Envío a provincias u otro país", desc: "Lo enviamos por encomienda a tu ciudad, provincia o país.", icon: Truck },
 ];
 const ZONAS = ["Cercado", "Sacaba", "Quillacollo", "Tiquipaya", "Colcapirhua", "Vinto", "Sipe Sipe", ...DEPARTAMENTOS];
 
@@ -143,7 +143,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
             <div className="absolute -right-10 -bottom-16 w-72 h-72 opacity-25 pointer-events-none"><Isotipo className="w-full h-full" /></div>
             <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
               <h1 className="vx-d text-2xl sm:text-5xl font-extrabold leading-tight max-w-2xl">Cada par es único. Cuando lo apartas, es tuyo.</h1>
-              <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-300 max-w-xl">Tenis seleccionados en excelente estado. Recoge en Cochabamba o recíbelos en cualquier ciudad de Bolivia.</p>
+              <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-300 max-w-xl">Tenis seleccionados en excelente estado. Recógelos en una paquetería de Cochabamba o te los enviamos a provincias y otros países.</p>
               {cat && <p className="mt-4 text-sm text-cyan-300 font-semibold">{cat.length} pares disponibles ahora</p>}
             </div>
           </section>
@@ -245,12 +245,15 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
       {auth && <Acceso modo={auth.modo} motivo={auth.motivo} onClose={() => { setAuth(null); try { sessionStorage.removeItem("vx-abrir-bolsa"); } catch {} }} />}
       {cuentaAbierta && cuenta && <MiCuenta cuenta={cuenta} onClose={() => setCuentaAbierta(false)} onSalir={salir} onGuardado={(c) => { onCuentaCambio(c); toast("Datos guardados."); }} onPedidos={() => { setCuentaAbierta(false); setVista("pedidos"); }} />}
       {exito && (
-        <Modal title="¡Pedido enviado!" onClose={() => setExito(null)} footer={<><Btn variant="ghost" onClick={() => setExito(null)}>Seguir viendo</Btn><Btn onClick={() => { setExito(null); setVista("pedidos"); }}>Ver mis pedidos</Btn></>}>
+        <Modal title="¡Pedido recibido!" onClose={() => setExito(null)} footer={<><Btn variant="ghost" onClick={() => setExito(null)}>Seguir viendo</Btn><Btn onClick={() => { setExito(null); setVista("pedidos"); }}><QrCode size={15} /> Pagar ahora</Btn></>}>
           <div className="flex flex-col items-center text-center gap-3 py-2">
             <CheckCircle2 size={44} className="text-cyan-600" />
-            <p className="text-base font-semibold text-slate-900">Tu pedido {exito.pedido} está apartado.</p>
-            <p className="text-sm text-slate-600">Guardamos {exito.n === 1 ? "tu par" : `tus ${exito.n} pares`} por {cfg.vigencia_horas} horas. Te escribiremos por WhatsApp al <b>{cuenta?.telefono}</b> para confirmar el pago y {exito.entrega === "Recojo en punto" ? "coordinar el recojo" : "el envío"}.</p>
-            <p className="text-sm text-slate-600 flex items-start gap-2 text-left rounded-lg bg-purple-50 px-3 py-2"><QrCode size={16} className="text-purple-700 shrink-0 mt-0.5" /> Si quieres pagar ya, en <b>Mis pedidos</b> te aparece el QR de pago de cada par.</p>
+            <p className="text-base font-semibold text-slate-900">Tu pedido {exito.pedido} está apartado por {cfg.vigencia_horas} horas.</p>
+            <ol className="text-sm text-slate-600 text-left space-y-1.5 list-decimal pl-5">
+              <li>Entra a <b>Mis pedidos</b> y paga con el QR.</li>
+              <li>Sube la foto de tu comprobante.</li>
+              <li>Verificamos el pago y te mostramos la fecha en que {exito.modo === "cochabamba" ? "lo dejamos en la paquetería" : "lo enviamos"}.</li>
+            </ol>
           </div>
         </Modal>
       )}
@@ -299,9 +302,9 @@ function DetallePar({ p, enBolsa, onAlternar, onFotos, onClose }) {
           </dl>
           {p.descripcion && <p className="text-sm text-slate-600 leading-relaxed">{p.descripcion}</p>}
           <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 space-y-1.5">
-            <div className="flex gap-2"><Store size={14} className="shrink-0 text-slate-400" /> Recógelo en Cochabamba</div>
-            <div className="flex gap-2"><Truck size={14} className="shrink-0 text-slate-400" /> Envío a domicilio en Cochabamba</div>
-            <div className="flex gap-2"><Package size={14} className="shrink-0 text-slate-400" /> Encomienda a cualquier ciudad de Bolivia</div>
+            <div className="flex gap-2"><Package size={14} className="shrink-0 text-slate-400" /> Recógelo en una paquetería de Cochabamba</div>
+            <div className="flex gap-2"><Truck size={14} className="shrink-0 text-slate-400" /> Envío a provincias y a otros países</div>
+            <div className="flex gap-2"><QrCode size={14} className="shrink-0 text-slate-400" /> Pagas con QR y subes tu comprobante</div>
           </div>
         </div>
       </div>
@@ -310,31 +313,30 @@ function DetallePar({ p, enBolsa, onAlternar, onFotos, onClose }) {
 }
 
 function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnviado, onError }) {
-  const [tipo, setTipo] = useState("Compra");
-  const [entrega, setEntrega] = useState("Recojo en punto");
-  const [direccion, setDireccion] = useState(cuenta?.direccion || "");
+  const [modo, setModo] = useState("cochabamba");
   const [destino, setDestino] = useState("");
   const [otroDestino, setOtroDestino] = useState("");
   const [transportista, setTransportista] = useState("");
+  const [recibe, setRecibe] = useState(cuenta?.nombre || "");
   const [nota, setNota] = useState("");
   const [busy, run] = useBusy();
   const total = pares.reduce((a, p) => a + p.precio, 0);
   const destinoFinal = destino === "__otro" ? otroDestino.trim() : destino;
-  const falta = !pares.length ? "Agrega al menos un par." : entrega === "Delivery Cochabamba" && !direccion.trim() ? "Escribe la dirección de entrega." : entrega === "Encomienda" && !destinoFinal ? "Elige la ciudad a la que se envía." : "";
+  const falta = !pares.length ? "Agrega al menos un par." : modo === "envio" && !destinoFinal ? "Elige o escribe a dónde se envía." : "";
   const enviar = () => run(async () => {
     if (!cuenta) { onNecesitaCuenta(); return; }
     const { data, error } = await supabase.rpc("cliente_pedir", {
-      p_productos: pares.map((p) => p.id), p_tipo: tipo,
-      p_envio: { entrega, direccion: entrega === "Delivery Cochabamba" ? direccion : "", destino: entrega === "Encomienda" ? destinoFinal : "", transportista: entrega === "Encomienda" ? transportista : "" },
+      p_productos: pares.map((p) => p.id), p_tipo: "Compra",
+      p_envio: { modo, destino: modo === "envio" ? destinoFinal : "Cochabamba", transportista, recibe },
       p_nota: nota,
     });
     if (error) { onError(mensajeError(error)); return; }
-    onEnviado(data, { n: pares.length, entrega });
+    onEnviado(data, { n: pares.length, modo });
   });
   return (
     <Modal wide title="Mi pedido" onClose={onClose} footer={<>
       <Btn variant="ghost" onClick={onClose}>Seguir viendo</Btn>
-      <Btn disabled={busy || !!falta} onClick={enviar}>{busy ? <Spinner /> : <ShoppingBag size={15} />} {cuenta ? (tipo === "Reserva" ? "Reservar" : "Enviar pedido") : "Continuar"}</Btn>
+      <Btn disabled={busy || !!falta} onClick={enviar}>{busy ? <Spinner /> : <ShoppingBag size={15} />} {cuenta ? "Comprar" : "Continuar"}</Btn>
     </>}>
       {!pares.length ? (
         <div className="py-8 text-center text-sm text-slate-500">Tu pedido está vacío. Toca <b>Lo quiero</b> en los pares que te gusten.</div>
@@ -353,40 +355,31 @@ function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnvi
           </div>
 
           <div>
-            <div className="text-xs font-semibold text-slate-700 mb-1.5">¿Qué quieres hacer?</div>
-            <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Tipo de pedido">
-              {[["Compra", "Comprar", "Te confirmamos el pago y te lo entregamos."], ["Reserva", `Reservar ${cfg.vigencia_horas} h`, "Lo apartamos mientras decides."]].map(([k, t, d]) => (
-                <button key={k} type="button" role="radio" aria-checked={tipo === k} onClick={() => setTipo(k)} className={`text-left rounded-xl border p-3 ${tipo === k ? "border-purple-700 ring-1 ring-purple-700 bg-purple-50" : "border-slate-200 hover:bg-slate-50"}`}>
-                  <span className="block text-sm font-semibold text-slate-900">{t}</span><span className="block text-xs text-slate-500 mt-0.5">{d}</span>
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div>
             <div className="text-xs font-semibold text-slate-700 mb-1.5">¿Cómo lo recibes?</div>
-            <div className="grid sm:grid-cols-3 gap-2" role="radiogroup" aria-label="Entrega">
+            <div className="grid sm:grid-cols-2 gap-2" role="radiogroup" aria-label="Entrega">
               {ENTREGAS.map(({ k, titulo, desc, icon: I }) => (
-                <button key={k} type="button" role="radio" aria-checked={entrega === k} onClick={() => setEntrega(k)} className={`text-left rounded-xl border p-3 ${entrega === k ? "border-purple-700 ring-1 ring-purple-700 bg-purple-50" : "border-slate-200 hover:bg-slate-50"}`}>
-                  <I size={18} className={entrega === k ? "text-purple-700" : "text-slate-400"} />
+                <button key={k} type="button" role="radio" aria-checked={modo === k} onClick={() => setModo(k)} className={`text-left rounded-xl border p-3 ${modo === k ? "border-purple-700 ring-1 ring-purple-700 bg-purple-50" : "border-slate-200 hover:bg-slate-50"}`}>
+                  <I size={18} className={modo === k ? "text-purple-700" : "text-slate-400"} />
                   <span className="block text-sm font-semibold text-slate-900 mt-1">{titulo}</span><span className="block text-xs text-slate-500 mt-0.5">{desc}</span>
                 </button>
               ))}
             </div>
           </div>
-          {entrega === "Delivery Cochabamba" && <Field label="Dirección de entrega en Cochabamba"><Input value={direccion} placeholder="Zona, calle, número y una referencia" onChange={(e) => setDireccion(e.target.value)} /></Field>}
-          {entrega === "Encomienda" && (
+          {modo === "envio" && (
             <div className="grid sm:grid-cols-2 gap-3">
-              <Field label="Ciudad o lugar de destino">
-                <Select value={destino} onChange={(e) => setDestino(e.target.value)} options={[{ value: "", label: "Elige tu ciudad" }, ...cfg.destinos.map((d) => ({ value: d, label: d })), { value: "__otro", label: "Otra ciudad o pueblo" }]} />
+              <Field label="¿A dónde lo enviamos?">
+                <Select value={destino} onChange={(e) => setDestino(e.target.value)} options={[{ value: "", label: "Elige el lugar" }, ...cfg.destinos.filter((d) => d !== "Cochabamba").map((d) => ({ value: d, label: d })), { value: "__otro", label: "Otra provincia o país" }]} />
               </Field>
-              {destino === "__otro" ? <Field label="¿Cuál?"><Input value={otroDestino} placeholder="Ej.: Montero" onChange={(e) => setOtroDestino(e.target.value)} /></Field>
-                : <Field label="Empresa de encomienda que prefieres (opcional)"><Input value={transportista} placeholder="Ej.: la flota de tu preferencia" onChange={(e) => setTransportista(e.target.value)} /></Field>}
+              {destino === "__otro" && <Field label="Escribe el lugar"><Input value={otroDestino} maxLength={80} placeholder="Ej.: Punata, o Lima (Perú)" onChange={(e) => setOtroDestino(e.target.value)} /></Field>}
             </div>
           )}
-          <Field label="Nota para nosotros (opcional)"><Input value={nota} maxLength={300} placeholder="Ej.: horario para recoger o algo que debamos saber" onChange={(e) => setNota(e.target.value)} /></Field>
-          <p className="text-xs text-slate-500">{entrega === "Recojo en punto" ? "Te pasaremos la dirección y el horario por WhatsApp." : "El costo del envío lo coordinamos contigo por WhatsApp."} Tus pares quedan apartados para ti hasta que confirmemos el pago.</p>
-          {!cuenta && <div className="rounded-xl bg-cyan-50 p-3 text-sm text-cyan-900 flex gap-2"><User size={16} className="shrink-0 mt-0.5" /> Para enviar tu pedido necesitas una cuenta. Te pediremos tu nombre, teléfono y correo; tus pares siguen guardados.</div>}
+          <div className="grid sm:grid-cols-2 gap-3">
+            <Field label="Quién recoge (nombre y carnet)"><Input value={recibe} maxLength={120} placeholder="Ej.: Ana Pérez, CI 1234567" onChange={(e) => setRecibe(e.target.value)} /></Field>
+            <Field label="Paquetería que prefieres (opcional)"><Input value={transportista} maxLength={80} placeholder="Ej.: la de tu preferencia" onChange={(e) => setTransportista(e.target.value)} /></Field>
+          </div>
+          <Field label="Nota para nosotros (opcional)"><Input value={nota} maxLength={300} placeholder="Algo que debamos saber" onChange={(e) => setNota(e.target.value)} /></Field>
+          <div className="rounded-xl bg-purple-50 p-3 text-xs text-purple-900 flex gap-2"><QrCode size={16} className="shrink-0 text-purple-700" /><span>Al comprar, te apartamos {pares.length === 1 ? "el par" : "los pares"} por {cfg.vigencia_horas} horas. En <b>Mis pedidos</b> pagas con el QR y subes la foto de tu comprobante. Cuando verifiquemos el pago, te avisamos la fecha de envío.{modo === "envio" ? " El costo de la encomienda lo pagas al recoger." : ""}</span></div>
+          {!cuenta && <div className="rounded-xl bg-cyan-50 p-3 text-sm text-cyan-900 flex gap-2"><User size={16} className="shrink-0 mt-0.5" /> Para comprar necesitas una cuenta. Te pediremos tu nombre, teléfono y correo; tus pares siguen guardados.</div>}
           {falta && pares.length > 0 && <p className="text-xs text-amber-700">{falta}</p>}
         </>
       )}
@@ -438,7 +431,7 @@ function Acceso({ modo: modoInicial, motivo, onClose }) {
                 <datalist id="vx-zonas">{ZONAS.map((z) => <option key={z} value={z} />)}</datalist>
               </Field>
             </div>
-            <Field label="Dirección (opcional)" hint="Solo si quieres que te lo llevemos a domicilio."><Input value={f.direccion} autoComplete="street-address" onChange={set("direccion")} /></Field>
+            
           </>
         )}
         <Field label="Correo"><Input type="email" inputMode="email" autoComplete={modo === "entrar" ? "username" : "email"} value={f.email} onChange={set("email")} /></Field>
@@ -485,14 +478,95 @@ function MiCuenta({ cuenta, onClose, onSalir, onGuardado, onPedidos }) {
   );
 }
 
-const estadoItem = (x) => {
-  if (x.estado === "Activa") return { tone: "Reservado", texto: "Apartado · por confirmar" };
-  if (x.estado === "Cancelada") return { tone: "Cancelada", texto: "Cancelado" };
-  if (!x.venta || x.venta.estado === "Anulada") return { tone: "Anulada", texto: "Anulado" };
-  if (x.venta.entrega === "Entregado") return { tone: "Pagado", texto: "Entregado" };
-  return { tone: "Disponible", texto: `Confirmado · ${String(x.venta.entrega).toLowerCase()}` };
+const textoEntrega = (e) => {
+  if (!e?.entrega) return "";
+  if (e.modo === "cochabamba") return "Recojo en paquetería de Cochabamba";
+  if (e.entrega === "Recojo en punto") return "Recoges en tienda (Cochabamba)";
+  if (e.entrega === "Delivery Cochabamba") return `Envío a: ${e.direccion}`;
+  return `Envío a ${e.destino}${e.transportista ? ` por ${e.transportista}` : ""}`;
 };
-const textoEntrega = (e) => !e?.entrega ? "" : e.entrega === "Recojo en punto" ? "Recoges en tienda (Cochabamba)" : e.entrega === "Delivery Cochabamba" ? `Envío a: ${e.direccion}` : `Encomienda a ${e.destino}${e.transportista ? ` por ${e.transportista}` : ""}`;
+const ETAPAS_LISTO = ["Listo para entregar", "Enviado", "Entregado"];
+
+/** Estado de un pedido completo (todos sus pares) para mostrar el seguimiento */
+function estadoPedido(items) {
+  const activas = items.filter((x) => x.estado === "Activa");
+  const conVenta = items.find((x) => x.venta && x.venta.estado === "Activa");
+  const v = conVenta?.venta || null;
+  const comp = items.find((x) => x.comprobante)?.comprobante || null;
+  const cancelado = !activas.length && !v;
+  return { activas, v, comp, cancelado, envio: items[0].envio || {}, vence: activas[0]?.vence };
+}
+
+function Seguimiento({ est }) {
+  const { v, comp, envio } = est;
+  const enCbba = envio.modo === "cochabamba";
+  const etapa = v?.entrega || "";
+  const pasos = [
+    { t: "Pedido recibido", ok: true },
+    { t: v ? "Pago aprobado" : comp?.estado === "En revisión" ? "Pago en revisión" : "Pago", ok: !!v, sub: !v ? (comp?.estado === "En revisión" ? "Estamos verificando" : "Esperando tu pago") : "" },
+    { t: "Preparando", ok: ETAPAS_LISTO.includes(etapa) },
+    { t: enCbba ? "En la paquetería" : "Enviado", ok: etapa === "Enviado" || etapa === "Entregado", sub: v?.fecha_envio && !(etapa === "Enviado" || etapa === "Entregado") ? `Fecha: ${fdate(v.fecha_envio)}` : "" },
+    { t: enCbba ? "Recogido" : "Entregado", ok: etapa === "Entregado" },
+  ];
+  const actual = pasos.findIndex((p) => !p.ok);
+  return (
+    <ol className="flex items-start px-2 pt-4 pb-3" aria-label="Seguimiento del pedido">
+      {pasos.map((p, i) => (
+        <li key={i} className="flex-1 flex flex-col items-center text-center relative" aria-current={i === actual ? "step" : undefined}>
+          {i > 0 && <span className={`absolute top-3 right-1/2 w-full h-0.5 ${p.ok || i === actual ? "bg-cyan-500" : "bg-slate-200"}`} />}
+          <span className={`relative z-10 w-6 h-6 rounded-full grid place-items-center text-xs font-bold ${p.ok ? "bg-cyan-500 text-white" : i === actual ? "bg-purple-700 text-white" : "bg-slate-200 text-slate-500"}`}>{p.ok ? <Check size={13} /> : i + 1}</span>
+          <span className={`text-[11px] sm:text-xs mt-1 leading-tight px-0.5 ${i === actual ? "font-semibold text-slate-900" : "text-slate-500"}`}>{p.t}</span>
+          {p.sub && <span className="text-[10px] sm:text-[11px] text-purple-700 leading-tight mt-0.5">{p.sub}</span>}
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function SubirComprobante({ pedido, total, toast, onListo }) {
+  const [file, setFile] = useState(null);
+  const [vista, setVista] = useState("");
+  const [monto, setMonto] = useState(total ? String(total) : "");
+  const [busy, run] = useBusy();
+  useEffect(() => { if (!file || !/^image\//.test(file.type)) { setVista(""); return; } const u = URL.createObjectURL(file); setVista(u); return () => URL.revokeObjectURL(u); }, [file]);
+  const elegir = (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setFile(f); };
+  const enviar = () => run(async () => {
+    const { data: u } = await supabase.auth.getUser();
+    const uid = u?.user?.id;
+    if (!uid) { toast("Vuelve a iniciar sesión e inténtalo otra vez.", "err"); return; }
+    const esImagen = /^image\/(jpeg|png|webp)$/.test(file.type);
+    const blob: any = esImagen && file.size > 1.5 * 1024 * 1024 ? await comprimirImagen(file, 1800, 0.85) : file;
+    if (blob.size > 8 * 1024 * 1024) { toast("El archivo es muy pesado (máximo 8 MB). Sube una captura de pantalla.", "err"); return; }
+    const ext = blob !== file ? "jpg" : (String(file.name || "").split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+    const ruta = `${uid}/${pedido}-${Date.now()}.${ext}`;
+    const up = await supabase.storage.from(BUCKET_COMPROBANTES).upload(ruta, blob, { contentType: blob.type || file.type || "image/jpeg", upsert: false });
+    if (up.error) { toast("No se pudo subir el comprobante. Revisa tu conexión e inténtalo otra vez.", "err"); return; }
+    const { error } = await supabase.rpc("cliente_subir_comprobante", { p_pedido: pedido, p_ruta: ruta, p_monto: monto === "" ? null : Number(monto) });
+    if (error) { await supabase.storage.from(BUCKET_COMPROBANTES).remove([ruta]); toast(mensajeError(error), "err"); return; }
+    toast("¡Listo! Recibimos tu comprobante. Te avisamos cuando verifiquemos el pago.");
+    setFile(null);
+    onListo();
+  });
+  return (
+    <div className="rounded-xl border border-slate-200 p-3 space-y-2.5">
+      <div className="text-sm font-semibold text-slate-900">Sube tu comprobante de pago</div>
+      <div className="flex gap-3 items-center">
+        <div className="w-16 h-16 rounded-lg bg-slate-50 border border-slate-200 grid place-items-center overflow-hidden shrink-0">
+          {vista ? <img src={vista} alt="Comprobante elegido" className="w-full h-full object-cover" /> : file ? <FileText size={24} className="text-slate-400" /> : <Upload size={22} className="text-slate-300" />}
+        </div>
+        <div className="flex-1 flex flex-wrap gap-2">
+          <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"><Camera size={15} /> Tomar foto<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={elegir} /></label>
+          <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"><Upload size={15} /> Elegir captura o PDF<input type="file" accept="image/*,application/pdf" className="sr-only" onChange={elegir} /></label>
+        </div>
+      </div>
+      {file && <div className="text-xs text-slate-500 truncate">{file.name}</div>}
+      <div className="flex items-end gap-2">
+        <div className="flex-1"><Field label="Monto que pagaste (Bs)"><Input type="number" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} /></Field></div>
+        <Btn disabled={busy || !file} onClick={enviar}>{busy ? <Spinner /> : <Upload size={15} />} Enviar</Btn>
+      </div>
+    </div>
+  );
+}
 
 function MisPedidos({ onVolver, toast, recargarCatalogo }) {
   const [lista, setLista] = useState(null);
@@ -533,38 +607,58 @@ function MisPedidos({ onVolver, toast, recargarCatalogo }) {
       ) : (
         <div className="space-y-4">
           {grupos.map(([k, items]) => {
-            const v = items.find((x) => x.venta)?.venta;
+            const est = estadoPedido(items);
+            const { v, comp, activas } = est;
             const saldo = v ? Math.max(0, Number(v.total) - Number(v.pagado)) : 0;
+            const porPagar = activas.reduce((a, x) => a + Number(x.par.precio || 0), 0);
+            const enRevision = comp?.estado === "En revisión" && activas.length > 0;
             return (
               <section key={k} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
                 <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
-                  <div><div className="text-sm font-semibold text-slate-900">Pedido {k}</div><div className="text-xs text-slate-500">{fdate(items[0].creado)} · {items[0].tipo === "Reserva" ? "Reserva" : "Compra"}</div></div>
-                  <div className="text-xs text-slate-600 flex items-center gap-1"><MapPin size={12} />{textoEntrega(items[0].envio)}</div>
+                  <div><div className="text-sm font-semibold text-slate-900">Pedido {k}</div><div className="text-xs text-slate-500">{fdate(items[0].creado)}</div></div>
+                  <div className="text-xs text-slate-600 flex items-center gap-1"><MapPin size={12} />{textoEntrega(est.envio)}</div>
                 </div>
-                <div className="divide-y divide-slate-100">
-                  {items.map((x) => { const st = estadoItem(x); return (
+                {est.cancelado ? (
+                  <div className="px-4 py-2.5 text-sm text-slate-600 bg-slate-50 flex items-center gap-2"><Pill tone="Cancelada">Cancelado</Pill>{items[0].obs && <span className="text-xs">{items[0].obs}</span>}</div>
+                ) : <Seguimiento est={est} />}
+                {v && (v.fecha_envio || v.guia) && (
+                  <div className="mx-4 mb-3 rounded-lg bg-cyan-50 px-3 py-2 text-sm text-cyan-900 flex flex-wrap gap-x-4 gap-y-0.5">
+                    {v.fecha_envio && <span><Truck size={13} className="inline -mt-0.5 mr-1" />{est.envio.modo === "cochabamba" ? "Lo dejamos en la paquetería el" : "Fecha de envío:"} <b>{fdate(v.fecha_envio)}</b></span>}
+                    {v.guia && <span>N.º de guía: <b>{v.guia}</b></span>}
+                  </div>
+                )}
+                <div className="divide-y divide-slate-100 border-t border-slate-100">
+                  {items.map((x) => (
                     <div key={x.reserva} className="flex items-center gap-3 p-3">
                       <div className="w-14 h-14 rounded-lg overflow-hidden vx-photo shrink-0">
                         <ProductPhoto p={{ codigo: x.par.codigo, marca: x.par.marca, modelo: x.par.modelo, hex: colorHex(x.par.color), photos: x.par.foto ? [{ id: x.par.foto, url: fotoUrl(x.par.foto) }] : [] }} />
                       </div>
                       <div className="flex-1 min-w-0">
-                        <div className="text-sm font-semibold truncate">{x.par.marca} {x.par.modelo}</div>
+                        <div className={`text-sm font-semibold truncate ${x.estado === "Cancelada" ? "text-slate-400 line-through" : ""}`}>{x.par.marca} {x.par.modelo}</div>
                         <div className="text-xs text-slate-500">Talla {String(x.par.talla).replace(".", ",")}{x.par.cm ? ` · ${fcm(x.par.cm)}` : ""} · {bs0(x.par.precio)}</div>
-                        <div className="mt-1 flex flex-wrap items-center gap-1.5"><Pill tone={st.tone}>{st.texto}</Pill>
-                          {x.estado === "Activa" && <span className="text-xs text-slate-500 flex items-center gap-1"><Clock size={11} /> hasta {ftime(x.vence)}</span>}
-                          {x.estado === "Cancelada" && x.obs && <span className="text-xs text-slate-500">{x.obs}</span>}
-                        </div>
                       </div>
-                      {x.estado === "Activa" && <Btn size="sm" variant="ghost" disabled={busy} onClick={() => cancelar(x)}>Cancelar</Btn>}
-                    </div>); })}
+                      {x.estado === "Activa" && !enRevision && <Btn size="sm" variant="ghost" disabled={busy} onClick={() => cancelar(x)}>Cancelar</Btn>}
+                    </div>))}
                 </div>
                 {v && v.estado !== "Anulada" && (
                   <div className="px-4 py-3 bg-slate-50 text-sm vx-num flex flex-wrap gap-x-6 gap-y-1">
                     <span>Total <b>{bs0(v.total)}</b></span><span>Pagado <b className="text-cyan-700">{bs0(v.pagado)}</b></span>{saldo > 0 && <span>Falta pagar <b className="text-rose-600">{bs0(saldo)}</b></span>}
                   </div>
                 )}
-                <PagosQr items={items} onAbrir={setQrAbierto} />
-                {items.some((x) => x.estado === "Activa") && <p className="px-4 py-2.5 text-xs text-slate-500 border-t border-slate-100">Te escribiremos por WhatsApp para confirmar el pago y la entrega.</p>}
+                {activas.length > 0 && (
+                  <div className="px-4 py-3 border-t border-slate-100 space-y-3">
+                    {enRevision ? (
+                      <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-900 flex gap-2"><Clock size={16} className="shrink-0 mt-0.5" /><span><b>Comprobante en revisión.</b> Estamos verificando tu pago{comp.monto ? ` de ${bs0(comp.monto)}` : ""}. Tus pares siguen apartados.</span></div>
+                    ) : (
+                      <>
+                        {comp?.estado === "Rechazado" && <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2.5 text-sm text-rose-800 flex gap-2"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><span><b>No pudimos aprobar tu comprobante:</b> {comp.motivo}. Sube otro, por favor.</span></div>}
+                        <p className="text-xs text-slate-600 flex items-center gap-1"><Clock size={12} /> Paga y sube tu comprobante antes del {ftime(est.vence)}, o los pares vuelven al catálogo.</p>
+                        <PagosQr items={activas} onAbrir={setQrAbierto} />
+                        <SubirComprobante pedido={k} total={porPagar} toast={toast} onListo={cargar} />
+                      </>
+                    )}
+                  </div>
+                )}
               </section>
             );
           })}
@@ -585,7 +679,7 @@ function PagosQr({ items, onAbrir }) {
   });
   if (!qrs.size) return null;
   return (
-    <div className="px-4 py-3 border-t border-slate-100 space-y-2">
+    <div className="space-y-2">
       {[...qrs.values()].map((q) => (
         <button key={q.ruta} onClick={() => onAbrir(q)} className="w-full flex items-center gap-3 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100 px-3 py-2.5 text-left">
           <span className="w-10 h-10 rounded-lg bg-white grid place-items-center text-purple-700 shrink-0"><QrCode size={22} /></span>
@@ -623,7 +717,7 @@ function PagarQr({ qr, onClose, toast }) {
       <ol className="text-sm text-slate-700 space-y-1.5 list-decimal pl-5">
         <li>Abre la app de tu banco y elige <b>Pagar con QR</b>.</li>
         <li>Escanea este código o súbelo desde tu galería (toca <b>Guardar QR</b>).</li>
-        <li>Guarda la captura del comprobante. Te escribiremos por WhatsApp para confirmar tu pago.</li>
+        <li>Guarda la captura del comprobante y súbela en tu pedido, en <b>Sube tu comprobante de pago</b>.</li>
       </ol>
     </Modal>
   );

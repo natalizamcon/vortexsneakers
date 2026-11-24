@@ -13,6 +13,7 @@ export const supabase: any = configurado
   : null;
 
 export const BUCKET = "productos";
+export const BUCKET_COMPROBANTES = "comprobantes"; // carpeta privada: solo el cliente dueño y el personal de ventas
 
 export const fotoUrl = (ruta: string) => (supabase ? supabase.storage.from(BUCKET).getPublicUrl(ruta).data.publicUrl : "");
 

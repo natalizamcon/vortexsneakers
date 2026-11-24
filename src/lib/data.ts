@@ -1,6 +1,6 @@
 // Carga los datos de Supabase y los convierte al formato que usan las pantallas.
 // Las acciones llaman a las operaciones seguras de la base de datos.
-import { supabase, fotoUrl, mensajeError, comprimirImagen, BUCKET } from "./supabase";
+import { supabase, fotoUrl, mensajeError, comprimirImagen, BUCKET, BUCKET_COMPROBANTES } from "./supabase";
 import { ROLES, colorHex, isoLocal, addDays, TODAY, bs, fdate } from "./utils";
 
 const num = (v) => Number(v) || 0;
@@ -19,13 +19,13 @@ async function leerTodo(tabla: string, orden = "creado_en") {
 }
 
 export const DB_VACIA = {
-  users: [], providers: [], lots: [], products: [], clients: [], reservations: [], sales: [], payments: [], qrs: [],
+  users: [], providers: [], lots: [], products: [], clients: [], reservations: [], sales: [], payments: [], qrs: [], comprobantes: [],
   expenses: [], otherIncome: [], events: [], audit: [],
   config: { canales: [], metodos: [], destinos: [], vigenciaHoras: 48, diasBajaRotacion: 30 },
 };
 
 export async function cargarTodo(esAdmin: boolean) {
-  const [perfiles, cfg, proveedores, lotes, productos, fotos, clientes, reservas, ventas, items, pagos, gastos, otros, eventos, auditoria, qrs] = await Promise.all([
+  const [perfiles, cfg, proveedores, lotes, productos, fotos, clientes, reservas, ventas, items, pagos, gastos, otros, eventos, auditoria, qrs, comprobantes] = await Promise.all([
     leerTodo("perfiles"),
     supabase.from("configuracion").select("*").eq("id", 1).maybeSingle(),
     leerTodo("proveedores"),
@@ -43,6 +43,7 @@ export async function cargarTodo(esAdmin: boolean) {
     esAdmin ? supabase.from("auditoria").select("*").order("ts", { ascending: false }).limit(800) : Promise.resolve({ data: [] }),
     // QR de pago (si la base todavía no tiene esta tabla, la app sigue funcionando sin ellos)
     leerTodo("qr_pagos", "creado_en").catch(() => []),
+    leerTodo("comprobantes", "creado_en").catch(() => []),
   ]);
   if (cfg.error) throw cfg.error;
   if ((auditoria as any).error) throw (auditoria as any).error;
@@ -54,6 +55,7 @@ export async function cargarTodo(esAdmin: boolean) {
 
   const c = cfg.data || {};
   return {
+    comprobantes: (comprobantes as any[]).map((c) => ({ id: c.id, pedido: c.pedido_web, clienteId: c.cliente_id, ruta: c.ruta || "", monto: c.monto == null ? null : num(c.monto), estado: c.estado, motivo: c.motivo || "", ventaId: c.venta_id, creado: c.creado_en, revisadoPor: c.revisado_por, revisadoEn: c.revisado_en })),
     qrs: (qrs as any[]).map((q) => ({ id: q.id, nombre: q.nombre, monto: q.monto == null ? null : num(q.monto), ruta: q.ruta, url: fotoUrl(q.ruta), creado: q.creado_en })),
     users: perfiles.map((u) => ({ id: u.id, nombre: u.nombre || u.email, email: u.email, rolKey: u.rol, rol: ROLES[u.rol] || u.rol, activo: u.activo, estado: u.activo ? "Activo" : "Sin acceso" })),
     providers: proveedores.map((p) => ({ id: p.id, nombre: p.nombre, telefono: p.telefono || "", desde: isoLocal(new Date(p.creado_en)) })),
@@ -272,6 +274,33 @@ export function crearAcciones({ db, me, recargar, toast }) {
       toast("QR eliminado. Los pares que lo usaban quedaron sin QR.");
       await recargar();
       return true;
+    },
+    // Comprobantes de pago de la tienda (carpeta privada: se ven con un enlace temporal)
+    async urlComprobante(ruta) {
+      if (!ruta) return "";
+      const { data, error } = await supabase.storage.from(BUCKET_COMPROBANTES).createSignedUrl(ruta, 600);
+      if (error) { fallo(error); return ""; }
+      return data?.signedUrl || "";
+    },
+    async aprobarPago(c, { monto, metodo, fecha, guia }) {
+      const { data, error } = await supabase.rpc("aprobar_comprobante", { p_comprobante: c.id, p_monto: monto === "" || monto == null ? null : Number(monto), p_metodo: metodo, p_fecha_envio: fecha || null, p_guia: guia || "" });
+      if (error) return fallo(error);
+      // El pago ya está en el banco: la foto del comprobante se borra
+      if (data?.ruta) await supabase.storage.from(BUCKET_COMPROBANTES).remove([data.ruta]).catch(() => {});
+      toast(`Pago aprobado. Se registró la venta ${data?.venta || ""} y se borró el comprobante.`);
+      await recargar();
+      return data?.venta || true;
+    },
+    async rechazarPago(c, motivo) {
+      const { data, error } = await supabase.rpc("rechazar_comprobante", { p_comprobante: c.id, p_motivo: motivo });
+      if (error) return fallo(error);
+      if (data) await supabase.storage.from(BUCKET_COMPROBANTES).remove([data]).catch(() => {});
+      toast("Comprobante rechazado. El cliente verá el motivo y podrá subir otro.");
+      await recargar();
+      return true;
+    },
+    async programarEnvio(ventaId, fecha, guia) {
+      return rpc("programar_envio", { p_venta: ventaId, p_fecha: fecha || null, p_guia: guia || "" }, "Envío actualizado. El cliente ya ve la fecha.");
     },
     async reorderPhotos(productId, ids, portada = false) {
       const { error } = await supabase.rpc("ordenar_fotos", { p_producto: productId, p_ids: ids });

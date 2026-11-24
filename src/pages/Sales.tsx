@@ -3,6 +3,7 @@ import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3,
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, itemLista, norm } from "../lib/utils";
 import { SearchBox } from "../components/search";
+import { entregaWeb, ComprobantesPendientes } from "./Pagos";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
 export function ClientPicker({ db, value, onChange, actions }) {
@@ -333,7 +334,6 @@ export const waLink = (tel, texto = "") => {
   const n = d.length === 8 ? "591" + d : d;
   return `https://wa.me/${n}${texto ? `?text=${encodeURIComponent(texto)}` : ""}`;
 };
-const entregaWeb = (e) => !e?.entrega ? "" : e.entrega === "Recojo en punto" ? "Recoge en tienda" : e.entrega === "Delivery Cochabamba" ? `Envío a domicilio${e.direccion ? `: ${e.direccion}` : ""}` : `Encomienda a ${e.destino || "otra ciudad"}${e.transportista ? ` (${e.transportista})` : ""}`;
 
 export function Reservations({ db, actions, setModal, client, prod, userName, can }) {
   const [tab, setTab] = useState("Activa");
@@ -349,6 +349,16 @@ export function Reservations({ db, actions, setModal, client, prod, userName, ca
   const Etiqueta = ({ r }) => r.web ? (
     <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 text-cyan-800 ring-1 ring-inset ring-cyan-200 px-2 py-0.5 text-xs font-semibold"><ShoppingBag size={11} /> Tienda · {r.tipoWeb === "Reserva" ? "reserva" : "compra"} · {r.pedidoWeb}</span>
   ) : null;
+  // Estado del pago del pedido web según el último comprobante
+  const compDe = (r) => r.web ? db.comprobantes.filter((c) => c.pedido === r.pedidoWeb).sort((a, b) => b.creado.localeCompare(a.creado))[0] : null;
+  const PagoWeb = ({ r }) => {
+    if (!r.web || r.estado !== "Activa") return null;
+    const c = compDe(r);
+    if (!c) return <span className="inline-flex rounded-full bg-slate-100 text-slate-600 px-2 py-0.5 text-xs">Esperando comprobante</span>;
+    if (c.estado === "En revisión") return <button onClick={() => setModal({ type: "revisarPago", comprobanteId: c.id })} className="inline-flex items-center gap-1 rounded-full bg-amber-100 text-amber-900 ring-1 ring-inset ring-amber-300 px-2 py-0.5 text-xs font-semibold">Comprobante en revisión · Revisar</button>;
+    if (c.estado === "Rechazado") return <span className="inline-flex rounded-full bg-rose-50 text-rose-700 px-2 py-0.5 text-xs" title={c.motivo}>Comprobante rechazado</span>;
+    return null;
+  };
   const mensaje = (r) => {
     const c = client(r.clienteId);
     const pares = db.reservations.filter((x) => x.pedidoWeb === r.pedidoWeb && x.estado === "Activa").map((x) => { const p = prod(x.productId); return p ? `${p.codigo} ${p.marca} ${p.modelo} talla ${p.talla}` : ""; }).filter(Boolean);
@@ -356,7 +366,8 @@ export function Reservations({ db, actions, setModal, client, prod, userName, ca
   };
   const Acciones = ({ r, movil = false }) => tab !== "Activa" ? null : (
     <div className={`flex gap-1.5 ${movil ? "mt-2 flex-wrap" : ""}`}>
-      {can?.sell !== false && <Btn size="sm" className={movil ? "flex-1" : ""} onClick={() => convertir(r)}>{r.web && db.reservations.filter((x) => x.pedidoWeb === r.pedidoWeb && x.estado === "Activa").length > 1 ? "Convertir pedido en venta" : "Convertir en venta"}</Btn>}
+      {r.web && compDe(r)?.estado === "En revisión" && <Btn size="sm" className={movil ? "flex-1" : ""} onClick={() => setModal({ type: "revisarPago", comprobanteId: compDe(r).id })}>Revisar pago</Btn>}
+      {can?.sell !== false && !(r.web && compDe(r)?.estado === "En revisión") && <Btn size="sm" variant={r.web ? "outline" : "primary"} className={movil ? "flex-1" : ""} onClick={() => convertir(r)}>{r.web && db.reservations.filter((x) => x.pedidoWeb === r.pedidoWeb && x.estado === "Activa").length > 1 ? "Convertir pedido en venta" : "Convertir en venta"}</Btn>}
       {r.web && client(r.clienteId)?.telefono && <a className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" href={waLink(client(r.clienteId).telefono, mensaje(r))} target="_blank" rel="noreferrer"><Phone size={13} /> WhatsApp</a>}
       <Btn size="sm" variant="danger" onClick={() => cancelar(r)}>Cancelar</Btn>
     </div>
@@ -364,7 +375,8 @@ export function Reservations({ db, actions, setModal, client, prod, userName, ca
   return (
     <div>
       <PageHead title="Reservas" route="/reservas" desc="Una reserva bloquea el par hasta que vence, se cancela o se convierte en venta. Los pedidos de la tienda en línea también llegan aquí." />
-      {webActivos > 0 && <div className="mb-3"><Note tone="teal">Tienes {webActivos} pedido{webActivos === 1 ? "" : "s"} de la tienda en línea por confirmar. Escribe al cliente por WhatsApp para coordinar el pago y la entrega, y luego conviértelo en venta.</Note></div>}
+      <ComprobantesPendientes db={db} client={client} setModal={setModal} />
+      {webActivos > 0 && <div className="mb-3"><Note tone="teal">Tienes {webActivos} pedido{webActivos === 1 ? "" : "s"} de la tienda en línea esperando pago. El cliente paga con el QR y sube su comprobante; cuando llegue, tócalo para revisarlo y aprobarlo.</Note></div>}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex gap-1 bg-white border border-slate-200 rounded-lg p-1 w-fit max-w-full overflow-x-auto vx-noscroll">
           {[["Activa", "Activas"], ["Convertida", "Convertidas en venta"], ["Cancelada", "Canceladas"]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 text-sm rounded-md whitespace-nowrap ${tab === k ? "bg-purple-600 text-white" : "text-slate-600"}`}>{l} ({db.reservations.filter((r) => r.estado === k && (!soloWeb || r.web)).length})</button>)}
@@ -381,7 +393,7 @@ export function Reservations({ db, actions, setModal, client, prod, userName, ca
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between gap-2"><span className="text-sm font-semibold truncate">{p.codigo} · {p.marca} {p.modelo}</span><span className="text-xs text-slate-500 shrink-0">{r.id}</span></div>
                 <div className="text-xs text-slate-600">{c?.nombre} · {c?.telefono}</div>
-                {r.web && <div className="mt-1"><Etiqueta r={r} /></div>}
+                {r.web && <div className="mt-1 flex flex-wrap gap-1"><Etiqueta r={r} /><PagoWeb r={r} /></div>}
                 {r.web && <div className="text-xs text-slate-600 mt-1 flex items-start gap-1"><MapPin size={12} className="mt-0.5 shrink-0" />{entregaWeb(r.envio)}</div>}
                 {r.web && r.obs && tab === "Activa" && <div className="text-xs text-slate-500 italic mt-0.5">“{r.obs}”</div>}
                 <div className="text-xs mt-0.5">{tab === "Activa" ? <span className={h < 12 ? "text-rose-600 font-medium" : "text-slate-500"}>Vence en {h > 0 ? `${Math.floor(h)} h ${Math.round((h % 1) * 60)} min` : "0 h"}</span> : <span className="text-slate-500">{fdate(r.creado)} {tab === "Cancelada" ? `· ${r.obs}` : `· ${r.ventaId || ""}`}</span>}{r.adelanto ? <span className="text-slate-500"> · adelanto {bs0(r.adelanto)}</span> : null}</div>
@@ -393,7 +405,7 @@ export function Reservations({ db, actions, setModal, client, prod, userName, ca
             <tr key={r.id} className={r.web && tab === "Activa" ? "bg-cyan-50/40" : ""}>
               <Td className="font-medium">{r.id}</Td><Td><span className="vx-d font-semibold">{p.codigo}</span> <span className="text-slate-500">{p.marca} {p.modelo} T{p.talla}</span></Td>
               <Td>{c?.nombre}<div className="text-xs text-slate-500 flex items-center gap-1"><Phone size={11} />{c?.telefono}</div></Td>
-              <Td>{r.web ? <Etiqueta r={r} /> : <span>{userName(r.socio)}<div className="text-xs text-slate-500">{r.canal}</div></span>}</Td>
+              <Td>{r.web ? <div className="flex flex-col items-start gap-1"><Etiqueta r={r} /><PagoWeb r={r} /></div> : <span>{userName(r.socio)}<div className="text-xs text-slate-500">{r.canal}</div></span>}</Td>
               <Td className="max-w-xs whitespace-normal text-xs text-slate-600">{r.web ? <>{entregaWeb(r.envio)}{r.obs && tab === "Activa" ? <div className="italic text-slate-500">“{r.obs}”</div> : null}</> : (r.envio?.entrega || "—")}</Td>
               <Td className="vx-num">{r.adelanto ? bs(r.adelanto) : "—"}</Td>
               <Td>{tab === "Activa" ? <span className={`vx-num ${h < 12 ? "text-rose-600 font-medium" : ""}`}>{h > 0 ? `${Math.floor(h)} h ${Math.round((h % 1) * 60)} min` : "Vencida"}</span> : fdate(r.creado)}</Td>
@@ -530,6 +542,9 @@ export function OrderDetail({ db, ventaId, onClose, actions, client, userName, s
           <div className="text-slate-600 mt-1">{e.tipo === "Recojo en punto" ? "Recojo" : "Envío"}: {fdate(e.fechaEstimada)}</div>
           {e.tipo !== "Recojo en punto" && <div className="text-slate-600">Costo {bs(e.costo)} · paga {e.pagaCliente ? "el cliente" : "el negocio"}</div>}
           {e.transportista && <div className="text-slate-600">Empresa: {e.transportista}</div>}
+          {e.recibe && <div className="text-slate-600">Recoge: {e.recibe}</div>}
+          {e.guia && <div className="text-slate-600">Guía: <b>{e.guia}</b></div>}
+          {s.estado === "Activa" && s.pedido !== "Entregado" && e.tipo !== "Recojo en punto" && <ProgramarEnvio s={s} actions={actions} />}
         </div>
       </div>
       <div>
@@ -572,5 +587,21 @@ export function OrderDetail({ db, ventaId, onClose, actions, client, userName, s
         </div>
       </div>
     </Modal>
+  );
+}
+
+// Fecha de envío y n.º de guía (el cliente de la tienda los ve en "Mis pedidos")
+function ProgramarEnvio({ s, actions }) {
+  const [abierto, setAbierto] = useState(false);
+  const [fecha, setFecha] = useState(s.entrega.fechaEstimada || "");
+  const [guia, setGuia] = useState(s.entrega.guia || "");
+  const [busy, run] = useBusy();
+  if (!abierto) return <button className="mt-1.5 text-xs font-semibold text-purple-700" onClick={() => setAbierto(true)}>Cambiar fecha de envío o guía</button>;
+  return (
+    <div className="mt-2 grid grid-cols-2 gap-2">
+      <Input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)} aria-label="Fecha de envío" />
+      <Input value={guia} maxLength={80} placeholder="N.º de guía" onChange={(e) => setGuia(e.target.value)} aria-label="Número de guía" />
+      <div className="col-span-2 flex justify-end gap-2"><Btn size="sm" variant="ghost" onClick={() => setAbierto(false)}>Cancelar</Btn><Btn size="sm" disabled={busy} onClick={() => run(async () => { if (await actions.programarEnvio(s.id, fecha, guia)) setAbierto(false); })}>Guardar</Btn></div>
+    </div>
   );
 }

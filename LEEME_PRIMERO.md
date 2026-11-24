@@ -124,9 +124,9 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 ## Tienda en línea (abierta al público)
 
 - Quien abre la página **sin iniciar sesión ve el catálogo**: solo pares disponibles, con fotos, talla, cm, color, estado, descripción y precio. Nunca ve costos, fardos, lotes ni finanzas.
-- Para **comprar o reservar**, el cliente crea su cuenta desde la misma tienda (nombre, celular, ciudad, correo y contraseña). No hace falta configurar nada en Supabase.
-- El cliente elige cómo recibirlo: **recoger en tienda**, **envío a domicilio en Cochabamba** o **encomienda para recoger en la paquetería** de su ciudad.
-- El pedido **aparta los pares** y llega a **Reservas** marcado como “Tienda”, con botón de WhatsApp. Al convertirlo en venta se convierten juntos todos los pares del pedido.
+- Para **comprar**, el cliente crea su cuenta desde la misma tienda (nombre, celular, ciudad, correo y contraseña). No hace falta configurar nada en Supabase.
+- El cliente elige cómo recibirlo: **paquetería en Cochabamba** o **envío a provincias u otro país** (siempre por paquetería).
+- El pedido **aparta los pares** por las horas configuradas y llega a **Reservas** marcado como “Tienda”, con botón de WhatsApp.
 - El personal entra con su correo desde el botón **Ingresar** (o “¿Eres parte del equipo?” al pie de la tienda).
 - Las cuentas de clientes **no tienen acceso** a ningún módulo interno: la base de datos se lo impide.
 - Solo el personal puede instalar la app en el celular; a los clientes no se les ofrece.
@@ -140,3 +140,13 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 - En la ficha de cada par ves su QR y puedes **Compartir** o **Cambiar**. Si el monto del QR no coincide con el precio del par, aparece un aviso.
 - El cliente ve el botón **Pagar con QR** en “Mis pedidos” mientras el par está apartado o le falta pagar. Cuando el pago está completo, el QR ya no se muestra.
 - Los QR se guardan en la misma carpeta de fotos `productos` (no hay que crear otra).
+
+## Pago con comprobante y seguimiento del envío
+
+1. El cliente compra (ya no existe la opción de reservar) y en **Mis pedidos** paga con el QR.
+2. Sube la foto o captura de su comprobante. El pedido queda **En revisión** y ya no vence mientras lo revisan.
+3. A ustedes les llega un aviso y en **Reservas** aparece “comprobantes de pago por revisar”. Al tocarlo ven el comprobante, el pedido y el monto.
+4. **Aprobar pago**: escribes cuánto llegó, el método y la fecha en que lo envías o lo dejas en la paquetería (y el n.º de guía si ya lo tienes). Se registra la venta pagada, los pares pasan al historial y **la foto del comprobante se borra**.
+5. **Rechazar**: escribes el motivo; el cliente lo ve y puede subir otro (se le dan 24 horas más).
+6. El cliente ve el seguimiento: Pedido recibido → Pago → Preparando → Enviado (o En la paquetería) → Entregado. Ustedes lo avanzan como siempre desde **Pedidos**, y ahí mismo pueden cambiar la fecha de envío o el n.º de guía.
+- Los comprobantes se guardan en una carpeta **privada** llamada `comprobantes` (la crea el script 08). Solo el cliente dueño y el personal de ventas pueden verlos.
