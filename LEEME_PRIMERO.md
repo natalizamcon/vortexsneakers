@@ -120,3 +120,13 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 | Las fotos no suben | Revisa el paso 3: debe existir la carpeta `productos` marcada como pública. |
 
 **Nota:** en el plan gratuito, Supabase pausa los proyectos que pasan 7 días sin uso. Si te ocurre, entra a supabase.com y toca **Restore project**; no se pierden datos.
+
+## Tienda en línea (abierta al público)
+
+- Quien abre la página **sin iniciar sesión ve el catálogo**: solo pares disponibles, con fotos, talla, cm, color, estado, descripción y precio. Nunca ve costos, fardos, lotes ni finanzas.
+- Para **comprar o reservar**, el cliente crea su cuenta desde la misma tienda (nombre, celular, ciudad, correo y contraseña). No hace falta configurar nada en Supabase.
+- El cliente elige cómo recibirlo: **recoger en tienda**, **envío a domicilio en Cochabamba** o **encomienda para recoger en la paquetería** de su ciudad.
+- El pedido **aparta los pares** y llega a **Reservas** marcado como “Tienda”, con botón de WhatsApp. Al convertirlo en venta se convierten juntos todos los pares del pedido.
+- El personal entra con su correo desde el botón **Ingresar** (o “¿Eres parte del equipo?” al pie de la tienda).
+- Las cuentas de clientes **no tienen acceso** a ningún módulo interno: la base de datos se lo impide.
+- Solo el personal puede instalar la app en el celular; a los clientes no se les ofrece.

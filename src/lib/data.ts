@@ -65,8 +65,8 @@ export async function cargarTodo(esAdmin: boolean) {
         bajaMotivo: p.baja_motivo || "", bajaEn: p.baja_en || null, bajaPor: p.baja_por || null,
       };
     }),
-    clients: clientes.map((x) => ({ id: x.id, nombre: x.nombre, telefono: x.telefono, zona: x.zona || "", direccion: x.direccion || "", obs: x.obs || "", fechaRegistro: isoLocal(new Date(x.creado_en)) })),
-    reservations: reservas.map((r) => ({ id: r.id, productId: r.producto_id, clienteId: r.cliente_id, creado: r.creado_en, vence: r.vence, socio: r.creado_por, canal: r.canal, adelanto: num(r.adelanto), estado: r.estado, obs: r.obs || "", envio: r.envio || {}, ventaId: r.venta_id })),
+    clients: clientes.map((x) => ({ id: x.id, nombre: x.nombre, telefono: x.telefono, zona: x.zona || "", direccion: x.direccion || "", obs: x.obs || "", fechaRegistro: isoLocal(new Date(x.creado_en)), cuentaWeb: !!x.usuario_id, email: x.email || "" })),
+    reservations: reservas.map((r) => ({ id: r.id, productId: r.producto_id, clienteId: r.cliente_id, creado: r.creado_en, vence: r.vence, socio: r.creado_por, canal: r.canal, adelanto: num(r.adelanto), estado: r.estado, obs: r.obs || "", envio: r.envio || {}, ventaId: r.venta_id, web: !!r.web, tipoWeb: r.tipo_web || "", pedidoWeb: r.pedido_web || "" })),
     sales: ventas.map((s) => {
       const e = s.entrega || {};
       return {

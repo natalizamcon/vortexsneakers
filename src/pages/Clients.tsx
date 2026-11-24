@@ -19,14 +19,14 @@ export function Clients({ db, setModal, can }) {
           <MRow key={c.id} onClick={() => setModal({ type: "clientDetail", id: c.id })}>
             <div className="flex items-center gap-3">
               <div className="w-10 h-10 rounded-full vx-grad text-white grid place-items-center text-xs font-bold shrink-0">{c.nombre.split(" ").slice(0, 2).map((w) => w[0]).join("")}</div>
-              <div className="flex-1 min-w-0"><div className="text-sm font-semibold truncate">{c.nombre}{c.n >= 3 && <span className="ml-1.5"><Pill tone="Activa">Frecuente</Pill></span>}</div><div className="text-xs text-slate-500">{c.telefono} · {c.zona}</div></div>
+              <div className="flex-1 min-w-0"><div className="text-sm font-semibold truncate">{c.nombre}{c.n >= 3 && <span className="ml-1.5"><Pill tone="Activa">Frecuente</Pill></span>}{c.cuentaWeb && <span className="ml-1.5"><Pill tone="Disponible">Cuenta en la tienda</Pill></span>}</div><div className="text-xs text-slate-500">{c.telefono} · {c.zona}</div></div>
               <div className="text-right vx-num shrink-0"><div className="text-sm font-semibold">{bs0(c.total)}</div><div className="text-xs text-slate-500">{c.n} pedido{c.n === 1 ? "" : "s"}</div></div>
             </div>
           </MRow>
         ))}>
           {list.map((c) => (
             <tr key={c.id} className="hover:bg-slate-50">
-              <Td className="font-medium">{c.nombre}{c.n >= 3 && <span className="ml-2"><Pill tone="Activa">Frecuente</Pill></span>}</Td><Td>{c.telefono}</Td><Td>{c.zona}</Td>
+              <Td className="font-medium">{c.nombre}{c.n >= 3 && <span className="ml-2"><Pill tone="Activa">Frecuente</Pill></span>}{c.cuentaWeb && <span className="ml-2"><Pill tone="Disponible">Cuenta en la tienda</Pill></span>}</Td><Td>{c.telefono}</Td><Td>{c.zona}</Td>
               <Td className="vx-num">{c.n}</Td><Td className="vx-num font-medium">{bs(c.total)}</Td><Td>{fdate(c.last)}</Td>
               <Td><Btn size="sm" variant="ghost" onClick={() => setModal({ type: "clientDetail", id: c.id })}>Ver historial</Btn></Td>
             </tr>

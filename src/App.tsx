@@ -7,7 +7,8 @@ import { supabase, configurado, mensajeError } from "./lib/supabase";
 import { cargarTodo, crearAcciones, DB_VACIA } from "./lib/data";
 import { computeMetrics, agendaEvents, reminderState, TIPOS_EVENTO, TODAY, fechaLarga, tick, ACCESO, permisos, ROLES } from "./lib/utils";
 import { Logo, Btn } from "./components/ui";
-import { Login, Cargando, SinConfigurar, SinAcceso } from "./pages/Login";
+import { Cargando, SinConfigurar, SinAcceso } from "./pages/Login";
+import { Tienda } from "./pages/Tienda";
 import { Dashboard } from "./pages/Dashboard";
 import { Inventory, ProductDrawer, ProductModal, DeleteProductsModal, SocialImageModal } from "./pages/Inventory";
 import { ReserveModal, SellModal, PayModal, VoidModal, Reservations, Sales, Orders, OrderDetail, EditSaleModal } from "./pages/Sales";
@@ -33,10 +34,16 @@ export default function App() {
   return <Sesion />;
 }
 
-/** Maneja el inicio de sesión y el perfil del usuario */
+/**
+ * Decide qué ve cada persona:
+ *  • sin sesión → la tienda (catálogo público)
+ *  • personal habilitado → el sistema interno
+ *  • cliente con cuenta → la tienda con su cuenta y sus pedidos
+ */
 function Sesion() {
   const [session, setSession] = useState(undefined);
   const [perfil, setPerfil] = useState(undefined);
+  const [cuenta, setCuenta] = useState(undefined);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data }) => setSession(data.session || null));
@@ -45,23 +52,41 @@ function Sesion() {
   }, []);
 
   useEffect(() => {
-    if (!session) { setPerfil(session === null ? null : undefined); return; }
+    if (!session) { setPerfil(session === null ? null : undefined); setCuenta(null); return; }
     setPerfil(undefined);
-    supabase.from("perfiles").select("*").eq("id", session.user.id).maybeSingle().then(({ data, error }) => {
-      setPerfil(error ? { error: mensajeError(error) } : data || { activo: false });
+    setCuenta(undefined);
+    supabase.from("perfiles").select("*").eq("id", session.user.id).maybeSingle().then(async ({ data, error }) => {
+      if (data?.activo) { setPerfil(data); setCuenta(null); return; }
+      // ¿Es una cuenta de cliente de la tienda?
+      const r = await supabase.rpc("cliente_mi_cuenta");
+      setCuenta(r.data || null);
+      setPerfil(error && !r.data ? { error: mensajeError(error) } : data || { activo: false });
     });
   }, [session?.user?.id]);
 
   if (session === undefined) return <Cargando />;
-  if (!session) return <Login />;
-  if (perfil === undefined) return <Cargando texto="Verificando tu acceso…" />;
+  if (!session) return <Tienda cuenta={null} onCuentaCambio={() => {}} />;
+  if (perfil === undefined || cuenta === undefined) return <Cargando texto="Verificando tu acceso…" />;
+  if (perfil?.activo) return <Sistema perfil={perfil} />;
+  if (cuenta) return <Tienda cuenta={cuenta} onCuentaCambio={setCuenta} />;
   if (perfil?.error) return <SinAcceso email={session.user.email} motivo={perfil.error} />;
-  if (!perfil?.activo) return <SinAcceso email={session.user.email} />;
-  return <Sistema perfil={perfil} />;
+  return <SinAcceso email={session.user.email} />;
 }
 
 /** El sistema una vez dentro */
+/** Solo el personal puede instalar la app: el enlace al manifiesto se agrega al iniciar sesión */
+function usarManifiesto() {
+  useEffect(() => {
+    if (document.querySelector('link[rel="manifest"]')) return;
+    const l = document.createElement("link");
+    l.rel = "manifest";
+    l.href = "/manifest.webmanifest";
+    document.head.appendChild(l);
+  }, []);
+}
+
 function Sistema({ perfil }) {
+  usarManifiesto();
   const me = perfil.id;
   const rol = perfil.rol;
   const can = permisos(rol);
@@ -83,6 +108,7 @@ function Sistema({ perfil }) {
   const yaCargo = useRef(false);
   const pendiente = useRef(false);
   const ultimaLiberacion = useRef(0);
+  const pedidosWeb = useRef(null);
 
   const toast = useCallback((msg, tone = "ok") => {
     const id = Math.random();
@@ -101,6 +127,19 @@ function Sistema({ perfil }) {
       }
       const nuevo = await cargarTodo(rol === "admin");
       tick();
+      // Aviso cuando llega un pedido nuevo de la tienda en línea
+      const ahora = new Set(nuevo.reservations.filter((r) => r.web && r.estado === "Activa").map((r) => r.pedidoWeb));
+      if (pedidosWeb.current) {
+        const nuevos = [...ahora].filter((x) => !pedidosWeb.current.has(x));
+        if (nuevos.length) {
+          const r = nuevo.reservations.find((x) => x.pedidoWeb === nuevos[0]);
+          const c = nuevo.clients.find((x) => x.id === r?.clienteId);
+          const msg = `Nuevo pedido de la tienda: ${nuevos.join(", ")}${c ? ` de ${c.nombre}` : ""}`;
+          toast(msg);
+          try { if ("Notification" in window && Notification.permission === "granted") new Notification("VORTEX · Pedido en línea", { body: msg, icon: "/icon-192.png" }); } catch {}
+        }
+      }
+      pedidosWeb.current = ahora;
       setDb(nuevo);
       setCargado(true);
       yaCargo.current = true;
@@ -113,7 +152,7 @@ function Sistema({ perfil }) {
       recargando.current = false;
       if (pendiente.current) { pendiente.current = false; recargar(); }
     }
-  }, [rol]);
+  }, [rol, toast]);
 
   // Carga inicial + cambios en tiempo real del otro socio + reloj
   useEffect(() => {

@@ -327,35 +327,77 @@ export function VoidModal({ ventaId, onClose, actions }) {
   );
 }
 
-export function Reservations({ db, actions, setModal, client, prod, userName }) {
+/** Enlace a WhatsApp con el número del cliente (Bolivia +591) */
+export const waLink = (tel, texto = "") => {
+  const d = String(tel || "").replace(/[^0-9]/g, "");
+  const n = d.length === 8 ? "591" + d : d;
+  return `https://wa.me/${n}${texto ? `?text=${encodeURIComponent(texto)}` : ""}`;
+};
+const entregaWeb = (e) => !e?.entrega ? "" : e.entrega === "Recojo en punto" ? "Recoge en tienda" : e.entrega === "Delivery Cochabamba" ? `Envío a domicilio${e.direccion ? `: ${e.direccion}` : ""}` : `Encomienda a ${e.destino || "otra ciudad"}${e.transportista ? ` (${e.transportista})` : ""}`;
+
+export function Reservations({ db, actions, setModal, client, prod, userName, can }) {
   const [tab, setTab] = useState("Activa");
-  const list = db.reservations.filter((r) => r.estado === tab).sort((a, b) => a.vence.localeCompare(b.vence));
+  const [soloWeb, setSoloWeb] = useState(false);
+  const list = db.reservations.filter((r) => r.estado === tab && (!soloWeb || r.web)).sort((a, b) => (tab === "Activa" ? a.vence.localeCompare(b.vence) : b.creado.localeCompare(a.creado)));
+  const webActivos = new Set(db.reservations.filter((r) => r.web && r.estado === "Activa").map((r) => r.pedidoWeb)).size;
+  // Un pedido de la tienda puede traer varios pares: se convierten todos juntos
+  const convertir = (r) => {
+    const grupo = r.web && r.pedidoWeb ? db.reservations.filter((x) => x.pedidoWeb === r.pedidoWeb && x.estado === "Activa") : [r];
+    setModal({ type: "sell", productIds: grupo.map((x) => x.productId), reservaIds: grupo.map((x) => x.id), clienteId: r.clienteId });
+  };
+  const cancelar = (r) => { if (confirm("¿Cancelar la reserva? El par vuelve a Disponibles.")) actions.cancelReservation(r.id); };
+  const Etiqueta = ({ r }) => r.web ? (
+    <span className="inline-flex items-center gap-1 rounded-full bg-cyan-50 text-cyan-800 ring-1 ring-inset ring-cyan-200 px-2 py-0.5 text-xs font-semibold"><ShoppingBag size={11} /> Tienda · {r.tipoWeb === "Reserva" ? "reserva" : "compra"} · {r.pedidoWeb}</span>
+  ) : null;
+  const mensaje = (r) => {
+    const c = client(r.clienteId);
+    const pares = db.reservations.filter((x) => x.pedidoWeb === r.pedidoWeb && x.estado === "Activa").map((x) => { const p = prod(x.productId); return p ? `${p.codigo} ${p.marca} ${p.modelo} talla ${p.talla}` : ""; }).filter(Boolean);
+    return `Hola ${c?.nombre?.split(" ")[0] || ""}, te escribimos de VORTEX SNEAKERS por tu pedido ${r.pedidoWeb}: ${pares.join(", ")}.`;
+  };
+  const Acciones = ({ r, movil = false }) => tab !== "Activa" ? null : (
+    <div className={`flex gap-1.5 ${movil ? "mt-2 flex-wrap" : ""}`}>
+      {can?.sell !== false && <Btn size="sm" className={movil ? "flex-1" : ""} onClick={() => convertir(r)}>{r.web && db.reservations.filter((x) => x.pedidoWeb === r.pedidoWeb && x.estado === "Activa").length > 1 ? "Convertir pedido en venta" : "Convertir en venta"}</Btn>}
+      {r.web && client(r.clienteId)?.telefono && <a className="inline-flex items-center gap-1 rounded-lg border border-slate-300 bg-white px-2.5 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50" href={waLink(client(r.clienteId).telefono, mensaje(r))} target="_blank" rel="noreferrer"><Phone size={13} /> WhatsApp</a>}
+      <Btn size="sm" variant="danger" onClick={() => cancelar(r)}>Cancelar</Btn>
+    </div>
+  );
   return (
     <div>
-      <PageHead title="Reservas" route="/reservas" desc="Una reserva bloquea el par hasta que vence, se cancela o se convierte en venta. Si vence sin adelanto, el par vuelve solo a disponibles; si tiene adelanto, queda en rojo para que decidas." />
-      <div className="flex gap-1 mb-4 bg-white border border-slate-200 rounded-lg p-1 w-fit max-w-full overflow-x-auto vx-noscroll">
-        {[["Activa", "Activas"], ["Convertida", "Convertidas en venta"], ["Cancelada", "Canceladas"]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 text-sm rounded-md whitespace-nowrap ${tab === k ? "bg-purple-600 text-white" : "text-slate-600"}`}>{l} ({db.reservations.filter((r) => r.estado === k).length})</button>)}
+      <PageHead title="Reservas" route="/reservas" desc="Una reserva bloquea el par hasta que vence, se cancela o se convierte en venta. Los pedidos de la tienda en línea también llegan aquí." />
+      {webActivos > 0 && <div className="mb-3"><Note tone="teal">Tienes {webActivos} pedido{webActivos === 1 ? "" : "s"} de la tienda en línea por confirmar. Escribe al cliente por WhatsApp para coordinar el pago y la entrega, y luego conviértelo en venta.</Note></div>}
+      <div className="flex flex-wrap items-center gap-2 mb-4">
+        <div className="flex gap-1 bg-white border border-slate-200 rounded-lg p-1 w-fit max-w-full overflow-x-auto vx-noscroll">
+          {[["Activa", "Activas"], ["Convertida", "Convertidas en venta"], ["Cancelada", "Canceladas"]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 text-sm rounded-md whitespace-nowrap ${tab === k ? "bg-purple-600 text-white" : "text-slate-600"}`}>{l} ({db.reservations.filter((r) => r.estado === k && (!soloWeb || r.web)).length})</button>)}
+        </div>
+        <label className="flex items-center gap-2 text-sm text-slate-700 bg-white border border-slate-200 rounded-lg px-3 py-1.5 cursor-pointer">
+          <input type="checkbox" className="w-4 h-4 accent-purple-700" checked={soloWeb} onChange={(e) => setSoloWeb(e.target.checked)} /> Solo tienda en línea
+        </label>
       </div>
       <Panel>
-        <Table head={["Reserva", "Par", "Cliente", "Socio", "Canal", "Adelanto", tab === "Activa" ? "Vence en" : "Fecha", ""]} empty={!list.length && "No hay reservas en esta lista."} mobile={list.map((r) => { const p = prod(r.productId), c = client(r.clienteId); const h = (new Date(r.vence) - NOW) / 3600000; return (
+        <Table head={["Reserva", "Par", "Cliente", "Origen", "Entrega", "Adelanto", tab === "Activa" ? "Vence en" : "Fecha", ""]} empty={!list.length && "No hay reservas en esta lista."} mobile={list.map((r) => { const p = prod(r.productId), c = client(r.clienteId); const h = (new Date(r.vence) - NOW) / 3600000; return p && (
           <MRow key={r.id}>
             <div className="flex gap-3">
               <div className="w-14 h-11 rounded-md overflow-hidden vx-photo shrink-0"><ProductPhoto p={p} /></div>
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between gap-2"><span className="text-sm font-semibold truncate">{p.codigo} · {p.marca} {p.modelo}</span><span className="text-xs text-slate-500 shrink-0">{r.id}</span></div>
                 <div className="text-xs text-slate-600">{c?.nombre} · {c?.telefono}</div>
+                {r.web && <div className="mt-1"><Etiqueta r={r} /></div>}
+                {r.web && <div className="text-xs text-slate-600 mt-1 flex items-start gap-1"><MapPin size={12} className="mt-0.5 shrink-0" />{entregaWeb(r.envio)}</div>}
+                {r.web && r.obs && tab === "Activa" && <div className="text-xs text-slate-500 italic mt-0.5">“{r.obs}”</div>}
                 <div className="text-xs mt-0.5">{tab === "Activa" ? <span className={h < 12 ? "text-rose-600 font-medium" : "text-slate-500"}>Vence en {h > 0 ? `${Math.floor(h)} h ${Math.round((h % 1) * 60)} min` : "0 h"}</span> : <span className="text-slate-500">{fdate(r.creado)} {tab === "Cancelada" ? `· ${r.obs}` : `· ${r.ventaId || ""}`}</span>}{r.adelanto ? <span className="text-slate-500"> · adelanto {bs0(r.adelanto)}</span> : null}</div>
               </div>
             </div>
-            {tab === "Activa" && <div className="flex gap-2 mt-2"><Btn size="sm" className="flex-1" onClick={() => setModal({ type: "sell", productIds: [r.productId], reservaIds: [r.id], clienteId: r.clienteId })}>Convertir en venta</Btn><Btn size="sm" variant="danger" onClick={() => { if (confirm("¿Cancelar la reserva? El par vuelve a Disponibles.")) actions.cancelReservation(r.id); }}>Cancelar</Btn></div>}
+            <Acciones r={r} movil />
           </MRow>); })}>
-          {list.map((r) => { const p = prod(r.productId), c = client(r.clienteId); const h = (new Date(r.vence) - NOW) / 3600000; return (
-            <tr key={r.id}>
+          {list.map((r) => { const p = prod(r.productId), c = client(r.clienteId); const h = (new Date(r.vence) - NOW) / 3600000; return p && (
+            <tr key={r.id} className={r.web && tab === "Activa" ? "bg-cyan-50/40" : ""}>
               <Td className="font-medium">{r.id}</Td><Td><span className="vx-d font-semibold">{p.codigo}</span> <span className="text-slate-500">{p.marca} {p.modelo} T{p.talla}</span></Td>
               <Td>{c?.nombre}<div className="text-xs text-slate-500 flex items-center gap-1"><Phone size={11} />{c?.telefono}</div></Td>
-              <Td>{userName(r.socio)}</Td><Td>{r.canal}</Td><Td className="vx-num">{r.adelanto ? bs(r.adelanto) : "—"}</Td>
+              <Td>{r.web ? <Etiqueta r={r} /> : <span>{userName(r.socio)}<div className="text-xs text-slate-500">{r.canal}</div></span>}</Td>
+              <Td className="max-w-xs whitespace-normal text-xs text-slate-600">{r.web ? <>{entregaWeb(r.envio)}{r.obs && tab === "Activa" ? <div className="italic text-slate-500">“{r.obs}”</div> : null}</> : (r.envio?.entrega || "—")}</Td>
+              <Td className="vx-num">{r.adelanto ? bs(r.adelanto) : "—"}</Td>
               <Td>{tab === "Activa" ? <span className={`vx-num ${h < 12 ? "text-rose-600 font-medium" : ""}`}>{h > 0 ? `${Math.floor(h)} h ${Math.round((h % 1) * 60)} min` : "Vencida"}</span> : fdate(r.creado)}</Td>
-              <Td>{tab === "Activa" && <div className="flex gap-1.5"><Btn size="sm" onClick={() => setModal({ type: "sell", productIds: [r.productId], reservaIds: [r.id], clienteId: r.clienteId })}>Convertir en venta</Btn><Btn size="sm" variant="danger" onClick={() => { if (confirm("¿Cancelar la reserva? El par vuelve a Disponibles.")) actions.cancelReservation(r.id); }}>Cancelar</Btn></div>}{tab === "Convertida" && <span className="text-xs text-slate-500">{r.ventaId}</span>}{tab === "Cancelada" && <span className="text-xs text-slate-500">{r.obs}</span>}</Td>
+              <Td><Acciones r={r} />{tab === "Convertida" && <span className="text-xs text-slate-500">{r.ventaId}</span>}{tab === "Cancelada" && <span className="text-xs text-slate-500">{r.obs}</span>}</Td>
             </tr>); })}
         </Table>
       </Panel>
