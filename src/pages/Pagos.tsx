@@ -18,7 +18,7 @@ const MOTIVOS = ["El monto no coincide", "No se ve bien el comprobante", "No enc
 
 export function RevisarPagoModal({ db, comprobanteId, actions, client, onClose, can }) {
   const c = db.comprobantes.find((x) => x.id === comprobanteId);
-  const [url, setUrl] = useState("");
+  const [urls, setUrls] = useState([]);
   const [cargando, setCargando] = useState(true);
   const [rechazar, setRechazar] = useState(false);
   const [motivo, setMotivo] = useState("");
@@ -31,14 +31,14 @@ export function RevisarPagoModal({ db, comprobanteId, actions, client, onClose, 
   const [d, setD] = useState({ monto: String(Math.max(0, total - adelantos) || ""), metodo: metodos.includes("QR") ? "QR" : metodos[0], fecha: addDays(TODAY, 1), guia: "" });
   useEffect(() => {
     let vivo = true;
-    if (c?.ruta) actions.urlComprobante(c.ruta).then((u) => { if (vivo) { setUrl(u); setCargando(false); } });
+    const lista = c?.archivos || [];
+    if (lista.length) Promise.all(lista.map((r) => actions.urlComprobante(r))).then((us) => { if (vivo) { setUrls(lista.map((r, i) => ({ ruta: r, url: us[i] }))); setCargando(false); } });
     else setCargando(false);
     return () => { vivo = false; };
-  }, [c?.ruta]);
+  }, [(c?.archivos || []).join("|")]);
   if (!c) return null;
   const cl = client(c.clienteId);
   const envio = reservas[0]?.envio || db.reservations.find((r) => r.pedidoWeb === c.pedido)?.envio || {};
-  const esPdf = /\.pdf$/i.test(c.ruta);
   const revisado = c.estado !== "En revisión";
   const montoNum = Number(d.monto || 0);
   const montoMal = d.monto !== "" && (montoNum < 0 || montoNum > total - adelantos + 0.001);
@@ -54,15 +54,24 @@ export function RevisarPagoModal({ db, comprobanteId, actions, client, onClose, 
     </>}>
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
-          <div className="text-xs font-semibold text-slate-700 mb-1.5">Comprobante que subió el cliente</div>
-          <div className="rounded-xl border border-slate-200 bg-slate-50 min-h-48 grid place-items-center overflow-hidden">
-            {!c.ruta ? <p className="text-sm text-slate-500 p-6 text-center">{c.estado === "Aprobado" ? "El comprobante ya se borró porque el pago fue aprobado." : "La imagen ya no está disponible."}</p>
-              : cargando ? <span className="text-sm text-slate-500 flex items-center gap-2"><Spinner /> Cargando…</span>
-              : !url ? <p className="text-sm text-rose-600 p-6 text-center">No se pudo abrir el comprobante.</p>
-              : esPdf ? <a href={url} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-2 p-8 text-purple-700 font-semibold"><FileText size={36} /> Abrir comprobante (PDF)</a>
-              : <a href={url} target="_blank" rel="noreferrer" className="block w-full" title="Abrir en grande"><img src={url} alt="Comprobante de pago" className="w-full max-h-[28rem] object-contain bg-white" /></a>}
-          </div>
-          <div className="text-xs text-slate-500 mt-1.5">Subido {ftime(c.creado)}{c.monto ? ` · el cliente dice que pagó ${bs0(c.monto)}` : ""}</div>
+          <div className="text-xs font-semibold text-slate-700 mb-1.5">{(c.archivos || []).length > 1 ? `${c.archivos.length} comprobantes que subió el cliente` : "Comprobante que subió el cliente"}</div>
+          {!(c.archivos || []).length ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 min-h-48 grid place-items-center"><p className="text-sm text-slate-500 p-6 text-center">{c.estado === "Aprobado" ? "Los comprobantes ya se borraron porque el pago fue aprobado." : "Las imágenes ya no están disponibles."}</p></div>
+          ) : cargando ? (
+            <div className="rounded-xl border border-slate-200 bg-slate-50 min-h-48 grid place-items-center"><span className="text-sm text-slate-500 flex items-center gap-2"><Spinner /> Cargando…</span></div>
+          ) : (
+            <div className="space-y-2 max-h-[30rem] overflow-y-auto pr-1">
+              {urls.map(({ ruta, url }, i) => (
+                <div key={ruta} className="rounded-xl border border-slate-200 bg-white overflow-hidden">
+                  {urls.length > 1 && <div className="text-xs font-semibold text-slate-600 px-2.5 py-1.5 border-b border-slate-100">Comprobante {i + 1} de {urls.length}</div>}
+                  {!url ? <p className="text-sm text-rose-600 p-6 text-center">No se pudo abrir este comprobante.</p>
+                    : /\.pdf$/i.test(ruta) ? <a href={url} target="_blank" rel="noreferrer" className="flex flex-col items-center gap-2 p-8 text-purple-700 font-semibold"><FileText size={36} /> Abrir comprobante (PDF)</a>
+                    : <a href={url} target="_blank" rel="noreferrer" className="block" title="Abrir en grande"><img src={url} alt={`Comprobante ${i + 1}`} className="w-full max-h-[26rem] object-contain bg-white" /></a>}
+                </div>
+              ))}
+            </div>
+          )}
+          <div className="text-xs text-slate-500 mt-1.5">Subido {ftime(c.creado)}{c.monto ? ` · el cliente dice que pagó ${bs0(c.monto)} en total` : ""}</div>
         </div>
 
         <div className="space-y-3">

@@ -2032,6 +2032,200 @@ grant execute on function public.aprobar_comprobante(uuid, numeric, text, date, 
 grant execute on function public.cliente_cancelar(text) to authenticated;
 grant execute on function public.cliente_mis_pedidos() to authenticated;
 
+-- =====================================================================
+--  VARIOS COMPROBANTES POR PEDIDO
+--  Si el cliente paga varios pares con QR distintos, sube un comprobante
+--  por cada pago (hasta 6). Todos se revisan juntos y se borran al final.
+-- =====================================================================
+
+alter table public.comprobantes add column if not exists archivos text[] not null default '{}';
+update public.comprobantes set archivos = array[ruta] where ruta is not null and archivos = '{}';
+
+-- Subir el pago con uno o varios comprobantes: se apartan los pares que sigan libres
+drop function if exists public.cliente_subir_comprobante(text, text, numeric);
+create or replace function public.cliente_subir_comprobante(p_pedido text, p_rutas text[], p_monto numeric)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v_c uuid := public._mi_cliente();
+  v_id uuid;
+  v_ruta text;
+  r record;
+  p record;
+  n_ok int := 0;
+  n_no int := 0;
+begin
+  if v_c is null then raise exception 'Inicia sesión con tu cuenta de cliente.'; end if;
+  if coalesce(array_length(p_rutas, 1), 0) = 0 then raise exception 'Sube la foto de tu comprobante.'; end if;
+  if array_length(p_rutas, 1) > 6 then raise exception 'Puedes subir hasta 6 comprobantes por pedido.'; end if;
+  foreach v_ruta in array p_rutas loop
+    if coalesce(v_ruta, '') = '' or v_ruta not like auth.uid()::text || '/%' or length(v_ruta) > 200 then
+      raise exception 'Sube la foto de tu comprobante.';
+    end if;
+  end loop;
+  if p_monto is not null and p_monto <= 0 then raise exception 'Revisa el monto pagado.'; end if;
+  if exists (select 1 from public.comprobantes where pedido_web = p_pedido and estado = 'En revisión') then
+    raise exception 'Ya enviaste tu pago para este pedido. Si te faltó un comprobante, usa "Agregar otro comprobante".';
+  end if;
+  perform 1 from public.reservas where pedido_web = p_pedido and cliente_id = v_c and web and estado = 'Por pagar' for update;
+  if not found then raise exception 'Este pedido ya no está esperando pago.'; end if;
+
+  perform set_config('vortex.interno', 'si', true);
+  for r in select * from public.reservas where pedido_web = p_pedido and cliente_id = v_c and web and estado = 'Por pagar' order by id loop
+    select * into p from public.productos where id = r.producto_id for update;
+    if found and p.estado = 'Disponible' then
+      update public.productos set estado = 'Reservado' where id = p.id;
+      update public.reservas set estado = 'Activa', vence = now() + interval '7 days' where id = r.id;
+      n_ok := n_ok + 1;
+    else
+      update public.reservas set estado = 'Cancelada', obs = 'Otra persona pagó este par primero' where id = r.id;
+      n_no := n_no + 1;
+    end if;
+  end loop;
+
+  insert into public.comprobantes(pedido_web, cliente_id, ruta, archivos, monto)
+  values (p_pedido, v_c, p_rutas[1], p_rutas, p_monto) returning id into v_id;
+  perform public._audit(null, 'Cliente subió comprobante', p_pedido,
+    format('%s · %s comprobante(s) · %s par(es) apartados%s', coalesce('Bs ' || p_monto, 'sin monto'), array_length(p_rutas, 1), n_ok,
+           case when n_no > 0 then format(', %s ya vendido(s) a otra persona', n_no) else '' end));
+  return jsonb_build_object('id', v_id, 'apartados', n_ok, 'perdidos', n_no);
+end $$;
+
+-- Agregar un comprobante que faltó mientras el pago está en revisión
+create or replace function public.cliente_agregar_comprobante(p_pedido text, p_ruta text, p_monto numeric)
+returns void language plpgsql security definer set search_path = public as $$
+declare
+  v_c uuid := public._mi_cliente();
+  c record;
+begin
+  if v_c is null then raise exception 'Inicia sesión con tu cuenta de cliente.'; end if;
+  if coalesce(p_ruta, '') = '' or p_ruta not like auth.uid()::text || '/%' or length(p_ruta) > 200 then
+    raise exception 'Sube la foto de tu comprobante.';
+  end if;
+  select * into c from public.comprobantes
+   where pedido_web = p_pedido and cliente_id = v_c and estado = 'En revisión' for update;
+  if not found then raise exception 'Este pedido no tiene un pago en revisión.'; end if;
+  if coalesce(array_length(c.archivos, 1), 0) >= 6 then raise exception 'Ya tienes 6 comprobantes en este pedido.'; end if;
+  update public.comprobantes
+     set archivos = array_append(archivos, p_ruta), ruta = coalesce(ruta, p_ruta),
+         monto = case when p_monto is not null and p_monto > 0 then p_monto else monto end
+   where id = c.id;
+  perform public._audit(null, 'Cliente agregó comprobante', p_pedido, coalesce('total Bs ' || p_monto, ''));
+end $$;
+
+-- Aprobar / rechazar: además vacían la lista de archivos (la app borra las imágenes)
+create or replace function public.aprobar_comprobante(p_comprobante uuid, p_monto numeric, p_metodo text, p_fecha_envio date, p_guia text)
+returns jsonb language plpgsql security definer set search_path = public as $$
+declare
+  v uuid := public._exigir(array['admin','vendedor']);
+  c record;
+  r record;
+  v_res text[];
+  v_items jsonb;
+  v_total numeric;
+  v_adelantos numeric;
+  v_pago numeric;
+  v_entrega jsonb;
+  v_venta text;
+begin
+  select * into c from public.comprobantes where id = p_comprobante for update;
+  if not found then raise exception 'Ese comprobante ya no existe.'; end if;
+  if c.estado <> 'En revisión' then raise exception 'Ese comprobante ya fue revisado.'; end if;
+
+  select array_agg(rv.id order by rv.id),
+         jsonb_agg(jsonb_build_object('producto_id', rv.producto_id, 'precio', pr.precio)),
+         coalesce(sum(pr.precio), 0)
+    into v_res, v_items, v_total
+    from public.reservas rv join public.productos pr on pr.id = rv.producto_id
+   where rv.pedido_web = c.pedido_web and rv.web and rv.estado = 'Activa';
+
+  if v_res is null then
+    select venta_id into v_venta from public.reservas
+     where pedido_web = c.pedido_web and web and estado = 'Convertida' and venta_id is not null limit 1;
+    if v_venta is null then raise exception 'Este pedido no tiene pares apartados (otra persona pagó primero). Recházalo para avisar al cliente.'; end if;
+  else
+    select * into r from public.reservas where id = v_res[1];
+    select coalesce(sum(monto), 0) into v_adelantos from public.pagos
+     where reserva_id = any(v_res) and not anulado and venta_id is null;
+    v_pago := coalesce(p_monto, v_total - v_adelantos);
+    if v_pago < 0 then v_pago := 0; end if;
+    v_entrega := jsonb_build_object(
+      'tipo', 'Encomienda', 'destino', coalesce(r.envio->>'destino', ''), 'transportista', coalesce(r.envio->>'transportista', ''),
+      'recibe', coalesce(r.envio->>'recibe', ''), 'ci', coalesce(r.envio->>'ci', ''), 'modo', coalesce(r.envio->>'modo', ''), 'direccion', '',
+      'costo', 0, 'pagaCliente', true, 'fechaEstimada', p_fecha_envio, 'guia', left(trim(coalesce(p_guia, '')), 80));
+    v_venta := public.registrar_venta(c.cliente_id, 'App VORTEX', v_items, v_res, v_pago, coalesce(nullif(p_metodo, ''), 'QR'),
+                                      v_entrega, 'Pago verificado con comprobante · ' || c.pedido_web, false, false);
+  end if;
+
+  update public.comprobantes
+     set estado = 'Aprobado', venta_id = v_venta, ruta = null, archivos = '{}', revisado_por = v, revisado_en = now()
+   where id = c.id;
+  perform public._audit(v, 'Aprobó comprobante', c.pedido_web, v_venta);
+  return jsonb_build_object('venta', v_venta, 'ruta', c.ruta, 'rutas', to_jsonb(c.archivos));
+end $$;
+
+create or replace function public.rechazar_comprobante(p_comprobante uuid, p_motivo text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v uuid := public._exigir(array['admin','vendedor']);
+  c record;
+begin
+  if length(trim(coalesce(p_motivo, ''))) < 4 then raise exception 'Escribe el motivo para que el cliente sepa qué pasó.'; end if;
+  select * into c from public.comprobantes where id = p_comprobante for update;
+  if not found then raise exception 'Ese comprobante ya no existe.'; end if;
+  if c.estado <> 'En revisión' then raise exception 'Ese comprobante ya fue revisado.'; end if;
+  update public.comprobantes
+     set estado = 'Rechazado', motivo = left(trim(p_motivo), 200), ruta = null, archivos = '{}', revisado_por = v, revisado_en = now()
+   where id = c.id;
+  perform set_config('vortex.interno', 'si', true);
+  update public.productos set estado = 'Disponible'
+   where estado = 'Reservado'
+     and id in (select producto_id from public.reservas where pedido_web = c.pedido_web and web and estado = 'Activa');
+  update public.reservas set estado = 'Cancelada', obs = 'Pago rechazado: ' || left(trim(p_motivo), 200)
+   where pedido_web = c.pedido_web and web and estado in ('Activa', 'Por pagar');
+  perform public._audit(v, 'Rechazó comprobante', c.pedido_web, p_motivo || ' — los pares volvieron al catálogo');
+  return array_to_string(c.archivos, '|');
+end $$;
+
+-- Pedidos del cliente: ahora dicen cuántos comprobantes subió
+create or replace function public.cliente_mis_pedidos()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(x order by x->>'creado' desc), '[]'::jsonb) from (
+    select jsonb_build_object(
+      'reserva', r.id, 'pedido', r.pedido_web, 'tipo', r.tipo_web, 'estado', r.estado, 'vence', r.vence,
+      'creado', r.creado_en, 'envio', r.envio, 'obs', case when r.estado = 'Cancelada' then r.obs else '' end,
+      'disponible', p.estado = 'Disponible',
+      'par', jsonb_build_object('codigo', p.codigo, 'marca', p.marca, 'modelo', p.modelo, 'talla', p.talla, 'cm', p.cm,
+             'color', p.color, 'precio', coalesce(vi.precio, p.precio),
+             'foto', (select f.ruta from public.producto_fotos f where f.producto_id = p.id order by f.orden, f.creado_en limit 1)),
+      'qr', case when q.id is not null and (r.estado in ('Activa', 'Por pagar') or (v.id is not null and v.estado = 'Activa' and not v.regalo
+                  and (select coalesce(sum(pg.monto), 0) from public.pagos pg where pg.venta_id = v.id and not pg.anulado)
+                    < (select coalesce(sum(i.precio), 0) from public.venta_items i where i.venta_id = v.id and i.activo)))
+             then jsonb_build_object('ruta', q.ruta, 'monto', q.monto, 'nombre', q.nombre) else null end,
+      'comprobante', (select jsonb_build_object('estado', cp.estado, 'motivo', cp.motivo, 'monto', cp.monto, 'creado', cp.creado_en,
+                                                'n', coalesce(array_length(cp.archivos, 1), 0))
+                        from public.comprobantes cp where cp.pedido_web = r.pedido_web and cp.cliente_id = r.cliente_id
+                       order by cp.creado_en desc limit 1),
+      'venta', case when v.id is null then null else jsonb_build_object(
+             'id', v.id, 'estado', v.estado, 'entrega', v.pedido, 'regalo', v.regalo,
+             'fecha_envio', v.entrega->>'fechaEstimada', 'guia', coalesce(v.entrega->>'guia', ''),
+             'total', (select coalesce(sum(i.precio), 0) from public.venta_items i where i.venta_id = v.id and i.activo),
+             'pagado', (select coalesce(sum(pg.monto), 0) from public.pagos pg where pg.venta_id = v.id and not pg.anulado)) end
+    ) as x
+    from public.reservas r
+    join public.productos p on p.id = r.producto_id
+    left join public.qr_pagos q on q.id = p.qr_id
+    left join public.ventas v on v.id = r.venta_id
+    left join public.venta_items vi on vi.venta_id = v.id and vi.producto_id = p.id and vi.activo
+    where r.web and r.cliente_id = public._mi_cliente()
+  ) t
+$$;
+
+grant execute on function public.cliente_subir_comprobante(text, text[], numeric) to authenticated;
+grant execute on function public.cliente_agregar_comprobante(text, text, numeric) to authenticated;
+grant execute on function public.aprobar_comprobante(uuid, numeric, text, date, text) to authenticated;
+grant execute on function public.rechazar_comprobante(uuid, text) to authenticated;
+grant execute on function public.cliente_mis_pedidos() to authenticated;
+
 -- Avisar a Supabase que hay funciones nuevas
 notify pgrst, 'reload schema';
 

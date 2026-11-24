@@ -523,48 +523,98 @@ function Seguimiento({ est }) {
   );
 }
 
-function SubirComprobante({ pedido, total, toast, onListo }) {
-  const [file, setFile] = useState(null);
+// Sube un archivo a la carpeta privada del cliente y devuelve su ruta (o un mensaje de error)
+async function subirArchivoComprobante(file, pedido) {
+  const { data: u } = await supabase.auth.getUser();
+  const uid = u?.user?.id;
+  if (!uid) return { error: "Vuelve a iniciar sesión e inténtalo otra vez." };
+  const esImagen = /^image\/(jpeg|png|webp)$/.test(file.type);
+  const blob: any = esImagen && file.size > 1.5 * 1024 * 1024 ? await comprimirImagen(file, 1800, 0.85) : file;
+  if (blob.size > 8 * 1024 * 1024) return { error: `“${file.name}” es muy pesado (máximo 8 MB). Sube una captura de pantalla.` };
+  const ext = blob !== file ? "jpg" : (String(file.name || "").split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
+  const ruta = `${uid}/${pedido}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}.${ext}`;
+  const up = await supabase.storage.from(BUCKET_COMPROBANTES).upload(ruta, blob, { contentType: blob.type || file.type || "image/jpeg", upsert: false });
+  if (up.error) return { error: "No se pudo subir el comprobante. Revisa tu conexión e inténtalo otra vez." };
+  return { ruta };
+}
+
+function Miniatura({ file, onQuitar }) {
   const [vista, setVista] = useState("");
+  useEffect(() => { if (!/^image\//.test(file.type)) return; const u = URL.createObjectURL(file); setVista(u); return () => URL.revokeObjectURL(u); }, [file]);
+  return (
+    <div className="relative w-16 h-16 rounded-lg bg-slate-50 border border-slate-200 grid place-items-center overflow-hidden shrink-0">
+      {vista ? <img src={vista} alt={file.name} className="w-full h-full object-cover" /> : <FileText size={22} className="text-slate-400" />}
+      {onQuitar && <button onClick={onQuitar} className="absolute top-0.5 right-0.5 w-5 h-5 rounded-full bg-slate-900/70 text-white grid place-items-center" aria-label={`Quitar ${file.name}`}><X size={12} /></button>}
+    </div>
+  );
+}
+
+function BotonesArchivo({ onFiles, varios = true }) {
+  const elegir = (e) => { const fs = Array.from(e.target.files || []) as File[]; e.target.value = ""; if (fs.length) onFiles(fs); };
+  return (
+    <div className="flex flex-wrap gap-2">
+      <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"><Camera size={15} /> Tomar foto<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={elegir} /></label>
+      <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"><Upload size={15} /> {varios ? "Elegir capturas o PDF" : "Elegir captura o PDF"}<input type="file" accept="image/*,application/pdf" multiple={varios} className="sr-only" onChange={elegir} /></label>
+    </div>
+  );
+}
+
+function SubirComprobante({ pedido, total, varios = false, toast, onListo }) {
+  const [files, setFiles] = useState([]);
   const [monto, setMonto] = useState(total ? String(total) : "");
   const [busy, run] = useBusy();
-  useEffect(() => { if (!file || !/^image\//.test(file.type)) { setVista(""); return; } const u = URL.createObjectURL(file); setVista(u); return () => URL.revokeObjectURL(u); }, [file]);
-  const elegir = (e) => { const f = e.target.files?.[0]; e.target.value = ""; if (f) setFile(f); };
+  const agregar = (fs) => setFiles((a) => [...a, ...fs].slice(0, 6));
   const enviar = () => run(async () => {
-    const { data: u } = await supabase.auth.getUser();
-    const uid = u?.user?.id;
-    if (!uid) { toast("Vuelve a iniciar sesión e inténtalo otra vez.", "err"); return; }
-    const esImagen = /^image\/(jpeg|png|webp)$/.test(file.type);
-    const blob: any = esImagen && file.size > 1.5 * 1024 * 1024 ? await comprimirImagen(file, 1800, 0.85) : file;
-    if (blob.size > 8 * 1024 * 1024) { toast("El archivo es muy pesado (máximo 8 MB). Sube una captura de pantalla.", "err"); return; }
-    const ext = blob !== file ? "jpg" : (String(file.name || "").split(".").pop() || "jpg").toLowerCase().replace(/[^a-z0-9]/g, "") || "jpg";
-    const ruta = `${uid}/${pedido}-${Date.now()}.${ext}`;
-    const up = await supabase.storage.from(BUCKET_COMPROBANTES).upload(ruta, blob, { contentType: blob.type || file.type || "image/jpeg", upsert: false });
-    if (up.error) { toast("No se pudo subir el comprobante. Revisa tu conexión e inténtalo otra vez.", "err"); return; }
-    const { data: res, error } = await supabase.rpc("cliente_subir_comprobante", { p_pedido: pedido, p_ruta: ruta, p_monto: monto === "" ? null : Number(monto) });
-    if (error) { await supabase.storage.from(BUCKET_COMPROBANTES).remove([ruta]); toast(mensajeError(error), "err"); return; }
-    if (res?.perdidos > 0) toast(res.apartados ? `Recibimos tu comprobante. ${res.perdidos === 1 ? "Un par lo pagó" : `${res.perdidos} pares los pagó`} otra persona antes; te contactaremos por la diferencia.` : "Recibimos tu comprobante, pero otra persona pagó antes esos pares. Te contactaremos para devolverte tu dinero.", "err");
+    const rutas = [];
+    for (const f of files) {
+      const r = await subirArchivoComprobante(f, pedido);
+      if (r.error) { if (rutas.length) await supabase.storage.from(BUCKET_COMPROBANTES).remove(rutas); toast(r.error, "err"); return; }
+      rutas.push(r.ruta);
+    }
+    const { data: res, error } = await supabase.rpc("cliente_subir_comprobante", { p_pedido: pedido, p_rutas: rutas, p_monto: monto === "" ? null : Number(monto) });
+    if (error) { await supabase.storage.from(BUCKET_COMPROBANTES).remove(rutas); toast(mensajeError(error), "err"); return; }
+    if (res?.perdidos > 0) toast(res.apartados ? `Recibimos tu pago. ${res.perdidos === 1 ? "Un par lo pagó" : `${res.perdidos} pares los pagó`} otra persona antes; te contactaremos por la diferencia.` : "Recibimos tu pago, pero otra persona pagó antes esos pares. Te contactaremos para devolverte tu dinero.", "err");
     else toast("¡Listo! Tus pares quedaron apartados. Te avisamos cuando verifiquemos el pago.");
-    setFile(null);
+    setFiles([]);
     onListo();
   });
   return (
     <div className="rounded-xl border border-slate-200 p-3 space-y-2.5">
       <div className="text-sm font-semibold text-slate-900">Sube tu comprobante de pago</div>
-      <div className="flex gap-3 items-center">
-        <div className="w-16 h-16 rounded-lg bg-slate-50 border border-slate-200 grid place-items-center overflow-hidden shrink-0">
-          {vista ? <img src={vista} alt="Comprobante elegido" className="w-full h-full object-cover" /> : file ? <FileText size={24} className="text-slate-400" /> : <Upload size={22} className="text-slate-300" />}
-        </div>
-        <div className="flex-1 flex flex-wrap gap-2">
-          <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"><Camera size={15} /> Tomar foto<input type="file" accept="image/*" capture="environment" className="sr-only" onChange={elegir} /></label>
-          <label className="inline-flex items-center gap-1.5 rounded-lg border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50 cursor-pointer"><Upload size={15} /> Elegir captura o PDF<input type="file" accept="image/*,application/pdf" className="sr-only" onChange={elegir} /></label>
-        </div>
+      {varios && <p className="text-xs text-slate-600">Si pagaste con varios QR, sube <b>un comprobante por cada pago</b> (hasta 6).</p>}
+      <div className="flex flex-wrap gap-2 items-center">
+        {files.map((f, i) => <Miniatura key={i + f.name} file={f} onQuitar={() => setFiles(files.filter((_, j) => j !== i))} />)}
+        {!files.length && <div className="w-16 h-16 rounded-lg bg-slate-50 border border-slate-200 grid place-items-center"><Upload size={22} className="text-slate-300" /></div>}
       </div>
-      {file && <div className="text-xs text-slate-500 truncate">{file.name}</div>}
+      {files.length < 6 && <BotonesArchivo onFiles={agregar} />}
+      {files.length > 0 && <div className="text-xs text-slate-500">{files.length} comprobante{files.length === 1 ? "" : "s"} listo{files.length === 1 ? "" : "s"} para enviar. Puedes agregar más.</div>}
       <div className="flex items-end gap-2">
-        <div className="flex-1"><Field label="Monto que pagaste (Bs)"><Input type="number" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} /></Field></div>
-        <Btn disabled={busy || !file} onClick={enviar}>{busy ? <Spinner /> : <Upload size={15} />} Enviar</Btn>
+        <div className="flex-1"><Field label={varios ? "Total que pagaste (Bs)" : "Monto que pagaste (Bs)"}><Input type="number" inputMode="decimal" value={monto} onChange={(e) => setMonto(e.target.value)} /></Field></div>
+        <Btn disabled={busy || !files.length} onClick={enviar}>{busy ? <Spinner /> : <Upload size={15} />} Enviar{files.length > 1 ? ` (${files.length})` : ""}</Btn>
       </div>
+    </div>
+  );
+}
+
+// Mientras el pago está en revisión: agregar un comprobante que faltó
+function AgregarComprobante({ pedido, toast, onListo }) {
+  const [abierto, setAbierto] = useState(false);
+  const [file, setFile] = useState(null);
+  const [busy, run] = useBusy();
+  const enviar = () => run(async () => {
+    const r = await subirArchivoComprobante(file, pedido);
+    if (r.error) { toast(r.error, "err"); return; }
+    const { error } = await supabase.rpc("cliente_agregar_comprobante", { p_pedido: pedido, p_ruta: r.ruta, p_monto: null });
+    if (error) { await supabase.storage.from(BUCKET_COMPROBANTES).remove([r.ruta]); toast(mensajeError(error), "err"); return; }
+    toast("Agregamos tu comprobante al pago en revisión.");
+    setFile(null); setAbierto(false); onListo();
+  });
+  if (!abierto) return <button className="text-sm font-semibold text-purple-700 flex items-center gap-1" onClick={() => setAbierto(true)}><Plus size={15} /> Agregar otro comprobante</button>;
+  return (
+    <div className="rounded-xl border border-slate-200 p-3 space-y-2.5">
+      <div className="text-sm font-semibold text-slate-900">Agregar otro comprobante</div>
+      <div className="flex items-center gap-3">{file ? <Miniatura file={file} onQuitar={() => setFile(null)} /> : <BotonesArchivo varios={false} onFiles={(fs) => setFile(fs[0])} />}</div>
+      <div className="flex justify-end gap-2"><Btn size="sm" variant="ghost" onClick={() => { setAbierto(false); setFile(null); }}>Cancelar</Btn><Btn size="sm" disabled={busy || !file} onClick={enviar}>{busy ? <Spinner /> : null} Enviar</Btn></div>
     </div>
   );
 }
@@ -654,7 +704,8 @@ function MisPedidos({ onVolver, toast, recargarCatalogo, cfg, destacar = "" }) {
                   </div>
                 )}
                 <div className="px-4 py-3 border-t border-slate-100 space-y-3 empty:hidden">
-                  {enRevision && <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-900 flex gap-2"><Clock size={16} className="shrink-0 mt-0.5" /><span><b>Comprobante en revisión.</b> Estamos verificando tu pago{comp.monto ? ` de ${bs0(comp.monto)}` : ""}. Tus pares ya están apartados para ti.</span></div>}
+                  {enRevision && <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-900 flex gap-2"><Clock size={16} className="shrink-0 mt-0.5" /><span><b>Pago en revisión.</b> Recibimos {comp.n > 1 ? `${comp.n} comprobantes` : "tu comprobante"}{comp.monto ? ` (total ${bs0(comp.monto)})` : ""}. Tus pares ya están apartados para ti.</span></div>}
+                  {enRevision && (comp.n || 0) < 6 && <AgregarComprobante pedido={k} toast={toast} onListo={cargar} />}
                   {rechazado && <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2.5 text-sm text-rose-800 flex gap-2"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><span><b>No pudimos aprobar tu pago:</b> {comp.motivo}. Los pares volvieron al catálogo.</span></div>}
                   {v && comp?.estado === "Aprobado" && <div className="rounded-xl bg-cyan-50 border border-cyan-200 px-3 py-2.5 text-sm text-cyan-900 flex gap-2"><CheckCircle2 size={16} className="shrink-0 mt-0.5" /><span><b>¡Pago aprobado!</b> Tu compra está confirmada. Aquí verás cada paso de tu envío.</span></div>}
                   {(enRevision || rechazado || (v && comp)) && <Contacto cfg={cfg} pedido={k} texto={rechazado ? "Escríbenos" : "¿Dudas sobre tu pedido? Escríbenos"} />}
@@ -662,7 +713,7 @@ function MisPedidos({ onVolver, toast, recargarCatalogo, cfg, destacar = "" }) {
                     <>
                       <p className="text-xs text-slate-600 flex items-start gap-1"><AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-600" /> Los pares no están apartados: se los lleva quien pague primero. Paga y sube tu comprobante cuanto antes (este pedido se cancela el {ftime(est.vence)}).</p>
                       <PagosQr items={libres} onAbrir={setQrAbierto} />
-                      <SubirComprobante pedido={k} total={porCobrar} toast={toast} onListo={subido} />
+                      <SubirComprobante pedido={k} total={porCobrar} varios={new Set(libres.map((x) => x.qr?.ruta || x.reserva)).size > 1} toast={toast} onListo={subido} />
                     </>
                   ) : (
                     <p className="text-sm text-rose-700">Los pares de este pedido ya los compró otra persona. Quítalos y elige otros en el catálogo.</p>

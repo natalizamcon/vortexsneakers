@@ -144,7 +144,7 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 ## Pago con comprobante y seguimiento del envío
 
 1. El cliente toca **Comprar** y pasa directo a pagar en **Mis pedidos**. **No se aparta nada:** los pares siguen en el catálogo y se los lleva quien pague primero.
-2. Paga con el QR y sube su comprobante. En ese momento los pares se apartan para él (si nadie pagó antes) y el pedido queda **En revisión**.
+2. Paga con el QR y sube su comprobante (si pagó varios pares con QR distintos, sube uno por cada pago, hasta 6; y si le faltó uno, puede agregarlo mientras está en revisión). En ese momento los pares se apartan para él (si nadie pagó antes) y el pedido queda **En revisión**.
 3. En **Reservas** aparece “comprobantes de pago por revisar”. Al tocarlo ven el comprobante, el pedido, quién recoge y su CI.
 4. **Aprobar pago**: escribes cuánto llegó y la fecha en que lo envías o lo dejas en la paquetería. Se registra la venta pagada, los pares pasan al historial y **la foto del comprobante se borra**.
 5. **Rechazar**: escribes el motivo; el pedido se cancela y **los pares vuelven al catálogo**.
