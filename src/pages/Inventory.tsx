@@ -1,5 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn, Gift } from "lucide-react";
+import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn, Gift, QrCode, CheckSquare } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm, itemLista } from "../lib/utils";
 import { FORMATOS, ENCUADRE_INICIAL, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
@@ -27,7 +27,7 @@ export function ProductCard({ p, onClick, children, selected = undefined, onZoom
           <div className="text-sm font-semibold text-slate-900 truncate">{p.marca} {p.modelo}</div>
           <div className="text-xs text-slate-500 mt-0.5 truncate">Talla {p.talla}{p.cm ? ` · ${fcm(p.cm)}` : ""} · {p.color} · {p.origen === "Americano" ? "US" : "KR"}</div>
           <div className="flex items-end justify-between mt-2">
-            <span className="vx-d vx-num text-base font-bold text-slate-900">{bs0(p.precio)}</span>
+            <span className="vx-d vx-num text-base font-bold text-slate-900 flex items-center gap-1.5">{bs0(p.precio)}{p.qrId && <span title="Tiene QR de pago" className="text-purple-700"><QrCode size={14} aria-label="Tiene QR de pago" /></span>}</span>
             <span className="text-xs text-cyan-700 vx-num">+{bs0(p.precio - pCost(p))}</span>
           </div>
         </div>
@@ -75,14 +75,15 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
   return (
     <div>
       <PageHead title="Inventario" route={tab === "Disponible" ? "/inventario" : tab === "Reservado" ? "/inventario/reservados" : "/inventario/historial"} desc="El catálogo muestra solo lo que se puede vender. Lo reservado y lo vendido tienen su propia pestaña.">
-        {can.admin && tab === "Disponible" && list.length > 0 && (
+        {can.inv && !selecting && <Btn variant="outline" onClick={() => setModal({ type: "qrManager" })}><QrCode size={15} /> QR de pago</Btn>}
+        {(can.admin || can.inv) && tab === "Disponible" && list.length > 0 && (
           selecting
             ? <Btn variant="outline" onClick={terminarSeleccion}><X size={15} /> Cancelar selección</Btn>
-            : <Btn variant="outline" onClick={() => setSelecting(true)}><Trash2 size={15} /> Eliminar pares</Btn>
+            : <Btn variant="outline" onClick={() => setSelecting(true)}><CheckSquare size={15} /> Seleccionar varios</Btn>
         )}
         {can.inv && !selecting && <Btn onClick={() => setModal({ type: "product" })}><Plus size={15} /> Nuevo par</Btn>}
       </PageHead>
-      {selecting && <div className="mb-3"><Note tone="rose">Toca los pares que quieres eliminar y luego el botón <b>Eliminar</b> de abajo.</Note></div>}
+      {selecting && <div className="mb-3"><Note>Toca los pares que quieras y luego elige abajo qué hacer: {can.inv ? <><b>Asignar QR</b> (por ejemplo, a todos los de un mismo precio)</> : null}{can.inv && can.admin ? " o " : ""}{can.admin ? <b>Eliminar</b> : null}.</Note></div>}
 
       <div className="flex gap-1 mb-3 overflow-x-auto vx-noscroll border-b border-slate-200 -mx-3 px-3 sm:mx-0 sm:px-0" role="tablist">
         {TABS.map(([k, l, I]) => (
@@ -213,7 +214,7 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
               ) : (
                 <tr key={p.id} className={`cursor-pointer ${selecting && sel.has(p.id) ? "bg-purple-50" : "hover:bg-slate-50"}`} onClick={() => (selecting ? alternar(p.id) : setDrawer(p.id))}>
                   {selecting && <Td><input type="checkbox" className="w-4 h-4 accent-purple-700" aria-label={`Seleccionar ${p.codigo}`} checked={sel.has(p.id)} onChange={() => alternar(p.id)} onClick={(e) => e.stopPropagation()} /></Td>}
-                  <Td className="font-semibold vx-d">{p.codigo}</Td><Td>{p.marca} {p.modelo}<div className="text-xs text-slate-500">{p.color}</div></Td>
+                  <Td className="font-semibold vx-d"><span className="inline-flex items-center gap-1">{p.codigo}{p.qrId && <QrCode size={13} className="text-purple-700" aria-label="Tiene QR de pago" />}</span></Td><Td>{p.marca} {p.modelo}<div className="text-xs text-slate-500">{p.color}</div></Td>
                   <Td>{p.talla}{p.cm ? <span className="text-xs text-slate-500"> · {fcm(p.cm)}</span> : null}</Td><Td><Pill>{p.origen}</Pill></Td><Td>{p.lote}</Td><Td className="vx-num">{bs(pCost(p))}</Td>
                   <Td className="vx-num font-medium">{bs(p.precio)}</Td><Td className="vx-num text-cyan-700">{bs(p.precio - pCost(p))}</Td><Td className="vx-num">{diffDays(p.fechaIngreso, TODAY)}</Td>
                 </tr>
@@ -230,8 +231,10 @@ export function Inventory({ db, setDrawer, setModal, toast, actions, client, use
           <div className="fixed z-30 left-3 right-3 bottom-20 lg:bottom-4 lg:left-72 lg:right-6 bg-slate-900 text-white rounded-xl shadow-xl px-4 py-3 flex flex-wrap items-center gap-2" role="region" aria-label="Pares seleccionados">
             <span className="text-sm font-semibold flex-1 min-w-max">{elegidos.length} {elegidos.length === 1 ? "par seleccionado" : "pares seleccionados"}</span>
             <button className="text-sm px-3 py-1.5 rounded-lg hover:bg-slate-700" onClick={() => setSel(todos ? new Set() : new Set(visibles))}>{todos ? "Quitar todos" : `Seleccionar los ${visibles.length}`}</button>
-            <button disabled={!elegidos.length} className="text-sm font-semibold px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-40 flex items-center gap-1.5"
-              onClick={() => setModal({ type: "deleteProducts", ids: elegidos, onDone: terminarSeleccion })}><Trash2 size={15} /> Eliminar</button>
+            {can.inv && <button disabled={!elegidos.length} className="text-sm font-semibold px-3 py-1.5 rounded-lg bg-purple-600 hover:bg-purple-700 disabled:opacity-40 flex items-center gap-1.5"
+              onClick={() => setModal({ type: "qrAssign", ids: elegidos, onDone: terminarSeleccion })}><QrCode size={15} /> Asignar QR</button>}
+            {can.admin && <button disabled={!elegidos.length} className="text-sm font-semibold px-3 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-700 disabled:opacity-40 flex items-center gap-1.5"
+              onClick={() => setModal({ type: "deleteProducts", ids: elegidos, onDone: terminarSeleccion })}><Trash2 size={15} /> Eliminar</button>}
             <button className="p-1.5 rounded-lg hover:bg-slate-700" aria-label="Cancelar selección" onClick={terminarSeleccion}><X size={17} /></button>
           </div>
         </>
@@ -349,6 +352,7 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
           {p.estado !== "Eliminado" && (
             <Btn variant="lila" className="w-full" onClick={() => { onClose(); setModal({ type: "social", productId: p.id }); }}><Share2 size={15} /> Imagen para redes (precio, talla y cm)</Btn>
           )}
+          {p.estado !== "Eliminado" && p.estado !== "Vendido" && <QrDelPar p={p} db={db} can={can} setModal={setModal} onClose={onClose} />}
           <div>
             <h2 className="vx-d text-xl font-bold">{p.marca} {p.modelo}</h2>
             {p.descripcion && <p className="text-sm text-slate-500">{p.descripcion}</p>}
@@ -648,5 +652,31 @@ export function SocialImageModal({ db, productId, onClose, toast }) {
         </div>
       )}
     </Modal>
+  );
+}
+
+/** Bloque de la ficha: el QR de pago que usa este par */
+function QrDelPar({ p, db, can, setModal, onClose }) {
+  const qr = p.qrId ? db.qrs.find((q) => q.id === p.qrId) : null;
+  if (!qr && !can.inv) return null;
+  if (!qr) return (
+    <button onClick={() => { onClose(); setModal({ type: "qrAssign", ids: [p.id] }); }} className="w-full flex items-center gap-3 rounded-xl border border-dashed border-slate-300 p-3 text-left hover:border-purple-500">
+      <QrCode size={22} className="text-slate-400" /><span className="flex-1"><span className="block text-sm font-semibold">Sin QR de pago</span><span className="block text-xs text-slate-500">Asígnale un QR para que el cliente pueda pagar.</span></span><Plus size={16} className="text-purple-700" />
+    </button>
+  );
+  const distinto = qr.monto && Number(qr.monto) !== Number(p.precio);
+  return (
+    <div className="rounded-xl border border-slate-200 p-3 flex items-center gap-3">
+      <button onClick={() => { onClose(); setModal({ type: "qrView", qrId: qr.id }); }} className="w-16 h-16 rounded-lg bg-white border border-slate-200 overflow-hidden shrink-0" aria-label="Ver QR en grande"><img src={qr.url} alt="" className="w-full h-full object-contain" /></button>
+      <div className="flex-1 min-w-0">
+        <div className="text-xs text-slate-500">QR de pago</div>
+        <div className="text-sm font-semibold truncate">{qr.nombre}</div>
+        {distinto && <div className="text-xs text-amber-700 flex items-center gap-1"><AlertTriangle size={12} /> El QR es de {bs0(qr.monto)} y el par cuesta {bs0(p.precio)}</div>}
+      </div>
+      <div className="flex flex-col gap-1">
+        <Btn size="sm" variant="outline" onClick={() => { onClose(); setModal({ type: "qrView", qrId: qr.id }); }}><Share2 size={13} /> Compartir</Btn>
+        {can.inv && <Btn size="sm" variant="ghost" onClick={() => { onClose(); setModal({ type: "qrAssign", ids: [p.id] }); }}>Cambiar</Btn>}
+      </div>
+    </div>
   );
 }

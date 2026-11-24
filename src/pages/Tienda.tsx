@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ShoppingBag, Search, X, ZoomIn, Check, Plus, Trash2, Store, Truck, Package, Clock, LogOut, User,
-  CheckCircle2, AlertTriangle, ChevronRight, MapPin, RefreshCw,
+  CheckCircle2, AlertTriangle, ChevronRight, MapPin, RefreshCw, QrCode, Download, Eye, ArrowLeft,
 } from "lucide-react";
 import { supabase, fotoUrl, mensajeError } from "../lib/supabase";
 import { bs0, fcm, colorHex, norm, ftime, fdate, DEPARTAMENTOS } from "../lib/utils";
@@ -28,7 +28,9 @@ const aPar = (x) => ({
   photos: (x.fotos || []).map((ruta) => ({ id: ruta, url: fotoUrl(ruta) })),
 });
 
-export function Tienda({ cuenta, onCuentaCambio }) {
+export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVista = () => {} }) {
+  // En la vista previa del equipo, la lista de pares se guarda aparte para no mezclarla
+  const llaveBolsa = vistaPrevia ? BOLSA_KEY + "-vista" : BOLSA_KEY;
   const [cat, setCat] = useState(null);
   const [error, setError] = useState("");
   const [cfg, setCfg] = useState({ destinos: DEPARTAMENTOS, vigencia_horas: 48 });
@@ -37,7 +39,7 @@ export function Tienda({ cuenta, onCuentaCambio }) {
   const [talla, setTalla] = useState("");
   const [categoria, setCategoria] = useState("Todas");
   const [orden, setOrden] = useState("recientes");
-  const [bolsa, setBolsa] = useState(() => leer(BOLSA_KEY, []));
+  const [bolsa, setBolsa] = useState(() => leer(llaveBolsa, []));
   const [detalle, setDetalle] = useState(null);
   const [visor, setVisor] = useState(null);
   const [bolsaAbierta, setBolsaAbierta] = useState(false);
@@ -73,10 +75,10 @@ export function Tienda({ cuenta, onCuentaCambio }) {
     const vis = () => { if (document.visibilityState === "visible") cargar(); };
     document.addEventListener("visibilitychange", vis);
     // Al volver de iniciar sesión para enviar el pedido, se abre la bolsa otra vez
-    try { if (sessionStorage.getItem("vx-abrir-bolsa")) { sessionStorage.removeItem("vx-abrir-bolsa"); setBolsaAbierta(true); } } catch {}
+    try { if (!vistaPrevia && sessionStorage.getItem("vx-abrir-bolsa")) { sessionStorage.removeItem("vx-abrir-bolsa"); setBolsaAbierta(true); } } catch {}
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
   }, [cargar]);
-  useEffect(() => guardar(BOLSA_KEY, bolsa), [bolsa]);
+  useEffect(() => guardar(llaveBolsa, bolsa), [bolsa, llaveBolsa]);
 
   const tallas = useMemo(() => [...new Set((cat || []).map((p) => p.talla))].sort((a, b) => a - b), [cat]);
   const categorias = useMemo(() => ["Todas", ...new Set((cat || []).map((p) => p.categoria).filter(Boolean))], [cat]);
@@ -103,6 +105,15 @@ export function Tienda({ cuenta, onCuentaCambio }) {
   return (
     <div className="vx min-h-screen bg-slate-50 text-slate-800">
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200 vx-safe-t">
+        {vistaPrevia && (
+          <div className="vx-grad text-white">
+            <div className="max-w-6xl mx-auto px-3 sm:px-6 py-2 flex items-center gap-2 text-sm">
+              <Eye size={16} className="shrink-0" />
+              <span className="flex-1 leading-tight"><b>Vista de cliente.</b> <span className="hidden sm:inline">Así ven la tienda tus clientes. Puedes navegar y armar un pedido de prueba, pero no se envía.</span><span className="sm:hidden">Así la ven tus clientes.</span></span>
+              <button onClick={onSalirVista} className="shrink-0 inline-flex items-center gap-1 rounded-lg bg-white text-purple-800 font-semibold px-3 py-1.5 text-xs sm:text-sm"><ArrowLeft size={14} /> Volver al sistema</button>
+            </div>
+          </div>
+        )}
         <div className="max-w-6xl mx-auto h-16 px-3 sm:px-6 flex items-center gap-2">
           <button onClick={() => setVista("catalogo")} aria-label="Ir al catálogo"><Logo /></button>
           <nav className="ml-auto flex items-center gap-1 sm:gap-2">
@@ -118,7 +129,7 @@ export function Tienda({ cuenta, onCuentaCambio }) {
                 {cuenta.nombre.split(" ").slice(0, 2).map((w) => w[0]).join("").toUpperCase()}
               </button>
             ) : (
-              <Btn size="sm" onClick={() => setAuth({ modo: "entrar" })}>Ingresar</Btn>
+              <Btn size="sm" onClick={() => (vistaPrevia ? toast("En la vista de cliente no se puede ingresar. Aquí el cliente crea su cuenta o entra.") : setAuth({ modo: "entrar" }))}>Ingresar</Btn>
             )}
           </nav>
         </div>
@@ -203,7 +214,7 @@ export function Tienda({ cuenta, onCuentaCambio }) {
       <footer className="border-t border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-24 sm:pb-6 flex flex-col sm:flex-row gap-2 justify-between text-xs text-slate-500">
           <span>VORTEX SNEAKERS · Cochabamba, Bolivia</span>
-          {!cuenta && <button className="text-left sm:text-right underline" onClick={() => setAuth({ modo: "entrar", motivo: "Si eres parte del equipo, entra con tu correo de trabajo." })}>¿Eres parte del equipo? Ingresa aquí</button>}
+          {!cuenta && !vistaPrevia && <button className="text-left sm:text-right underline" onClick={() => setAuth({ modo: "entrar", motivo: "Si eres parte del equipo, entra con tu correo de trabajo." })}>¿Eres parte del equipo? Ingresa aquí</button>}
         </div>
       </footer>
 
@@ -226,7 +237,7 @@ export function Tienda({ cuenta, onCuentaCambio }) {
           pares={(cat || []).filter((p) => bolsa.includes(p.id))} cfg={cfg} cuenta={cuenta}
           onQuitar={(id) => setBolsa(bolsa.filter((x) => x !== id))}
           onClose={() => setBolsaAbierta(false)}
-          onNecesitaCuenta={() => { try { sessionStorage.setItem("vx-abrir-bolsa", "1"); } catch {} setBolsaAbierta(false); setAuth({ modo: "crear", motivo: "Para enviar tu pedido, crea tu cuenta o ingresa. Tus pares siguen guardados." }); }}
+          onNecesitaCuenta={() => { if (vistaPrevia) { toast("Vista de cliente: aquí el cliente crearía su cuenta y enviaría el pedido. No se envió nada."); return; } try { sessionStorage.setItem("vx-abrir-bolsa", "1"); } catch {} setBolsaAbierta(false); setAuth({ modo: "crear", motivo: "Para enviar tu pedido, crea tu cuenta o ingresa. Tus pares siguen guardados." }); }}
           onEnviado={(pedido, info) => { setBolsa([]); setBolsaAbierta(false); setExito({ pedido, ...info }); cargar(); }}
           onError={async (msg) => { toast(msg, "err"); await cargar(); }}
         />
@@ -239,6 +250,7 @@ export function Tienda({ cuenta, onCuentaCambio }) {
             <CheckCircle2 size={44} className="text-cyan-600" />
             <p className="text-base font-semibold text-slate-900">Tu pedido {exito.pedido} está apartado.</p>
             <p className="text-sm text-slate-600">Guardamos {exito.n === 1 ? "tu par" : `tus ${exito.n} pares`} por {cfg.vigencia_horas} horas. Te escribiremos por WhatsApp al <b>{cuenta?.telefono}</b> para confirmar el pago y {exito.entrega === "Recojo en punto" ? "coordinar el recojo" : "el envío"}.</p>
+            <p className="text-sm text-slate-600 flex items-start gap-2 text-left rounded-lg bg-purple-50 px-3 py-2"><QrCode size={16} className="text-purple-700 shrink-0 mt-0.5" /> Si quieres pagar ya, en <b>Mis pedidos</b> te aparece el QR de pago de cada par.</p>
           </div>
         </Modal>
       )}
@@ -484,6 +496,7 @@ const textoEntrega = (e) => !e?.entrega ? "" : e.entrega === "Recojo en punto" ?
 
 function MisPedidos({ onVolver, toast, recargarCatalogo }) {
   const [lista, setLista] = useState(null);
+  const [qrAbierto, setQrAbierto] = useState(null);
   const [err, setErr] = useState("");
   const [busy, run] = useBusy();
   const cargar = useCallback(async () => {
@@ -550,12 +563,68 @@ function MisPedidos({ onVolver, toast, recargarCatalogo }) {
                     <span>Total <b>{bs0(v.total)}</b></span><span>Pagado <b className="text-cyan-700">{bs0(v.pagado)}</b></span>{saldo > 0 && <span>Falta pagar <b className="text-rose-600">{bs0(saldo)}</b></span>}
                   </div>
                 )}
+                <PagosQr items={items} onAbrir={setQrAbierto} />
                 {items.some((x) => x.estado === "Activa") && <p className="px-4 py-2.5 text-xs text-slate-500 border-t border-slate-100">Te escribiremos por WhatsApp para confirmar el pago y la entrega.</p>}
               </section>
             );
           })}
         </div>
       )}
+      {qrAbierto && <PagarQr qr={qrAbierto} onClose={() => setQrAbierto(null)} toast={toast} />}
     </main>
+  );
+}
+
+// Junta los pares de un pedido que usan el mismo QR (por ejemplo, dos pares de Bs 180 → un solo QR)
+function PagosQr({ items, onAbrir }) {
+  const qrs = new Map();
+  items.filter((x) => x.qr && x.qr.ruta).forEach((x) => {
+    const k = x.qr.ruta;
+    if (!qrs.has(k)) qrs.set(k, { ...x.qr, pares: [] });
+    qrs.get(k).pares.push(x.par);
+  });
+  if (!qrs.size) return null;
+  return (
+    <div className="px-4 py-3 border-t border-slate-100 space-y-2">
+      {[...qrs.values()].map((q) => (
+        <button key={q.ruta} onClick={() => onAbrir(q)} className="w-full flex items-center gap-3 rounded-xl border border-purple-200 bg-purple-50 hover:bg-purple-100 px-3 py-2.5 text-left">
+          <span className="w-10 h-10 rounded-lg bg-white grid place-items-center text-purple-700 shrink-0"><QrCode size={22} /></span>
+          <span className="flex-1 min-w-0">
+            <span className="block text-sm font-semibold text-purple-900">Pagar con QR{q.monto ? ` · ${bs0(q.monto)}` : ""}</span>
+            <span className="block text-xs text-purple-800 truncate">{q.pares.length === 1 ? `${q.pares[0].marca} ${q.pares[0].modelo}` : `Para ${q.pares.length} pares: paga una vez por cada par`}</span>
+          </span>
+          <ChevronRight size={18} className="text-purple-700" />
+        </button>
+      ))}
+    </div>
+  );
+}
+
+function PagarQr({ qr, onClose, toast }) {
+  const url = fotoUrl(qr.ruta);
+  const [busy, run] = useBusy();
+  const descargar = () => run(async () => {
+    try {
+      const b = await (await fetch(url)).blob();
+      const u = URL.createObjectURL(b);
+      const a = document.createElement("a"); a.href = u; a.download = `QR-VORTEX${qr.monto ? "-" + Math.round(qr.monto) : ""}.${(b.type.split("/")[1] || "png").replace("jpeg", "jpg")}`;
+      document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 4000);
+    } catch { toast("No se pudo descargar. Mantén presionada la imagen para guardarla.", "err"); }
+  });
+  const n = qr.pares.length;
+  return (
+    <Modal title="Pagar con QR" onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy} onClick={descargar}>{busy ? <Spinner /> : <Download size={15} />} Guardar QR</Btn></>}>
+      <div className="rounded-xl bg-white border border-slate-200 p-3"><img src={url} alt="Código QR para pagar" className="w-full max-h-96 object-contain" /></div>
+      {qr.monto ? (
+        <div className="text-center"><div className="text-xs text-slate-500">Monto a pagar{n > 1 ? " por cada par" : ""}</div><div className="vx-d text-3xl font-bold text-slate-900">{bs0(qr.monto)}</div>{n > 1 && <div className="text-xs text-slate-500">Son {n} pares: paga {n} veces o un total de <b>{bs0(qr.monto * n)}</b> si tu banco permite cambiar el monto.</div>}</div>
+      ) : (
+        <div className="text-center text-sm text-slate-600">Escribe en tu banco el monto del par: <b>{qr.pares.map((p) => bs0(p.precio)).join(" + ")}</b></div>
+      )}
+      <ol className="text-sm text-slate-700 space-y-1.5 list-decimal pl-5">
+        <li>Abre la app de tu banco y elige <b>Pagar con QR</b>.</li>
+        <li>Escanea este código o súbelo desde tu galería (toca <b>Guardar QR</b>).</li>
+        <li>Guarda la captura del comprobante. Te escribiremos por WhatsApp para confirmar tu pago.</li>
+      </ol>
+    </Modal>
   );
 }

@@ -1273,6 +1273,130 @@ grant execute on function public.cliente_pedir(uuid[], text, jsonb, text) to aut
 grant execute on function public.cliente_mis_pedidos() to authenticated;
 grant execute on function public.cliente_cancelar(text) to authenticated;
 
+-- =====================================================================
+--  QR DE PAGO: una imagen de QR (con su monto) que se asigna a uno o
+--  varios pares. Varios pares del mismo precio pueden usar el mismo QR.
+--  El cliente lo ve en "Mis pedidos" después de apartar el par.
+-- =====================================================================
+
+create table if not exists public.qr_pagos (
+  id         uuid primary key default gen_random_uuid(),
+  nombre     text not null default '',
+  monto      numeric(12,2) check (monto is null or monto > 0),
+  ruta       text not null,
+  creado_por uuid default auth.uid(),
+  creado_en  timestamptz not null default now()
+);
+alter table public.qr_pagos enable row level security;
+drop policy if exists vx_leer on public.qr_pagos;
+create policy vx_leer on public.qr_pagos for select to authenticated using (public.es_activo());
+
+alter table public.productos add column if not exists qr_id uuid references public.qr_pagos(id) on delete set null;
+create index if not exists productos_qr_idx on public.productos(qr_id);
+
+-- Registrar un QR ya subido a la carpeta de fotos (carpeta "qr/")
+create or replace function public.crear_qr(p_nombre text, p_monto numeric, p_ruta text)
+returns uuid language plpgsql security definer set search_path = public as $$
+declare
+  v uuid := public._exigir(array['admin','inventario']);
+  v_id uuid;
+begin
+  if coalesce(trim(p_ruta), '') = '' or p_ruta !~ '^qr/' then raise exception 'Sube la imagen del QR.'; end if;
+  if p_monto is not null and p_monto <= 0 then raise exception 'El monto del QR debe ser mayor a cero.'; end if;
+  insert into public.qr_pagos(nombre, monto, ruta, creado_por)
+  values (coalesce(nullif(left(trim(p_nombre), 60), ''), case when p_monto is null then 'QR monto libre' else 'QR Bs ' || p_monto end), p_monto, p_ruta, v)
+  returning id into v_id;
+  perform public._audit(v, 'Subió QR de pago', coalesce(nullif(trim(p_nombre), ''), 'QR'), coalesce('Bs ' || p_monto, 'monto libre'));
+  return v_id;
+end $$;
+
+create or replace function public.editar_qr(p_qr uuid, p_nombre text, p_monto numeric)
+returns void language plpgsql security definer set search_path = public as $$
+declare v uuid := public._exigir(array['admin','inventario']);
+begin
+  if p_monto is not null and p_monto <= 0 then raise exception 'El monto del QR debe ser mayor a cero.'; end if;
+  update public.qr_pagos set nombre = coalesce(nullif(left(trim(p_nombre), 60), ''), nombre), monto = p_monto where id = p_qr;
+  if not found then raise exception 'Ese QR ya no existe.'; end if;
+  perform public._audit(v, 'Editó QR de pago', coalesce(p_nombre, ''), coalesce('Bs ' || p_monto, 'monto libre'));
+end $$;
+
+-- Asignar un QR a varios pares a la vez.
+--  p_qr nulo        → quita el QR de esos pares
+--  p_reemplazar = sí → los pares que tenían este QR y no están en la lista lo pierden
+create or replace function public.asignar_qr(p_qr uuid, p_productos uuid[], p_reemplazar boolean default false)
+returns int language plpgsql security definer set search_path = public as $$
+declare
+  v uuid := public._exigir(array['admin','inventario']);
+  v_nombre text;
+  n int;
+begin
+  if p_qr is not null then
+    select nombre into v_nombre from public.qr_pagos where id = p_qr;
+    if not found then raise exception 'Ese QR ya no existe.'; end if;
+  end if;
+  perform set_config('vortex.interno', 'si', true);
+  if p_qr is not null and coalesce(p_reemplazar, false) then
+    update public.productos set qr_id = null
+     where qr_id = p_qr and not (id = any(coalesce(p_productos, '{}'::uuid[])));
+  end if;
+  update public.productos set qr_id = p_qr
+   where id = any(coalesce(p_productos, '{}'::uuid[])) and estado <> 'Eliminado';
+  get diagnostics n = row_count;
+  perform public._audit(v, case when p_qr is null then 'Quitó QR de pares' else 'Asignó QR a pares' end,
+                        coalesce(v_nombre, 'QR'), format('%s par(es)', n));
+  return n;
+end $$;
+
+-- Eliminar un QR: los pares quedan sin QR. Devuelve la ruta para borrar la imagen.
+create or replace function public.eliminar_qr(p_qr uuid)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v uuid := public._exigir(array['admin','inventario']);
+  q record;
+begin
+  select * into q from public.qr_pagos where id = p_qr for update;
+  if not found then raise exception 'Ese QR ya no existe.'; end if;
+  perform set_config('vortex.interno', 'si', true);
+  update public.productos set qr_id = null where qr_id = p_qr;
+  delete from public.qr_pagos where id = p_qr;
+  perform public._audit(v, 'Eliminó QR de pago', q.nombre, '');
+  return q.ruta;
+end $$;
+
+-- Pedidos del cliente: ahora incluyen el QR para pagar mientras falte pagar
+create or replace function public.cliente_mis_pedidos()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(x order by x->>'creado' desc), '[]'::jsonb) from (
+    select jsonb_build_object(
+      'reserva', r.id, 'pedido', r.pedido_web, 'tipo', r.tipo_web, 'estado', r.estado, 'vence', r.vence,
+      'creado', r.creado_en, 'envio', r.envio, 'obs', case when r.estado = 'Cancelada' then r.obs else '' end,
+      'par', jsonb_build_object('codigo', p.codigo, 'marca', p.marca, 'modelo', p.modelo, 'talla', p.talla, 'cm', p.cm,
+             'color', p.color, 'precio', coalesce(vi.precio, p.precio),
+             'foto', (select f.ruta from public.producto_fotos f where f.producto_id = p.id order by f.orden, f.creado_en limit 1)),
+      'qr', case when q.id is not null and (r.estado = 'Activa' or (v.id is not null and v.estado = 'Activa' and not v.regalo
+                  and (select coalesce(sum(pg.monto), 0) from public.pagos pg where pg.venta_id = v.id and not pg.anulado)
+                    < (select coalesce(sum(i.precio), 0) from public.venta_items i where i.venta_id = v.id and i.activo)))
+             then jsonb_build_object('ruta', q.ruta, 'monto', q.monto, 'nombre', q.nombre) else null end,
+      'venta', case when v.id is null then null else jsonb_build_object(
+             'id', v.id, 'estado', v.estado, 'entrega', v.pedido, 'regalo', v.regalo,
+             'total', (select coalesce(sum(i.precio), 0) from public.venta_items i where i.venta_id = v.id and i.activo),
+             'pagado', (select coalesce(sum(pg.monto), 0) from public.pagos pg where pg.venta_id = v.id and not pg.anulado)) end
+    ) as x
+    from public.reservas r
+    join public.productos p on p.id = r.producto_id
+    left join public.qr_pagos q on q.id = p.qr_id
+    left join public.ventas v on v.id = r.venta_id
+    left join public.venta_items vi on vi.venta_id = v.id and vi.producto_id = p.id and vi.activo
+    where r.web and r.cliente_id = public._mi_cliente()
+  ) t
+$$;
+
+grant execute on function public.crear_qr(text, numeric, text) to authenticated;
+grant execute on function public.editar_qr(uuid, text, numeric) to authenticated;
+grant execute on function public.asignar_qr(uuid, uuid[], boolean) to authenticated;
+grant execute on function public.eliminar_qr(uuid) to authenticated;
+grant execute on function public.cliente_mis_pedidos() to authenticated;
+
 -- Avisar a Supabase que hay funciones nuevas
 notify pgrst, 'reload schema';
 

@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from "react";
 import {
   LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, Menu, Bell,
-  LogOut, Clock, CheckCircle2, AlertTriangle, History, Layers, CalendarDays, MoreHorizontal, KeyRound, WifiOff,
+  LogOut, Clock, CheckCircle2, AlertTriangle, History, Layers, CalendarDays, MoreHorizontal, KeyRound, WifiOff, Eye, QrCode,
 } from "lucide-react";
 import { supabase, configurado, mensajeError } from "./lib/supabase";
 import { cargarTodo, crearAcciones, DB_VACIA } from "./lib/data";
@@ -9,6 +9,7 @@ import { computeMetrics, agendaEvents, reminderState, TIPOS_EVENTO, TODAY, fecha
 import { Logo, Btn } from "./components/ui";
 import { Cargando, SinConfigurar, SinAcceso } from "./pages/Login";
 import { Tienda } from "./pages/Tienda";
+import { QrManagerModal, QrAssignModal, QrViewModal } from "./pages/Qr";
 import { Dashboard } from "./pages/Dashboard";
 import { Inventory, ProductDrawer, ProductModal, DeleteProductsModal, SocialImageModal } from "./pages/Inventory";
 import { ReserveModal, SellModal, PayModal, VoidModal, Reservations, Sales, Orders, OrderDetail, EditSaleModal } from "./pages/Sales";
@@ -104,6 +105,7 @@ function Sistema({ perfil }) {
   const [modal, setModal] = useState(null);
   const [drawer, setDrawer] = useState(null);
   const [bellOpen, setBellOpen] = useState(false);
+  const [vistaCliente, setVistaCliente] = useState(false);
   const recargando = useRef(false);
   const yaCargo = useRef(false);
   const pendiente = useRef(false);
@@ -214,6 +216,8 @@ function Sistema({ perfil }) {
 
   if (errorCarga) return <SinAcceso email={perfil.email} motivo={errorCarga} />;
   if (!cargado) return <Cargando texto="Cargando el negocio…" />;
+  // "Ver como cliente": muestra la tienda tal cual la ve el público, sin cerrar la sesión
+  if (vistaCliente) return <Tienda vistaPrevia cuenta={null} onCuentaCambio={() => {}} onSalirVista={() => { setVistaCliente(false); window.scrollTo(0, 0); }} />;
 
   const ctx = { db, m, me, actions, setModal, setDrawer, go, userName, client, prod, toast, can, rol };
   const badges = { agenda: alerts.length, reservas: db.reservations.filter((r) => r.estado === "Activa").length, pedidos: db.sales.filter((s) => s.estado === "Activa" && s.pedido !== "Entregado").length };
@@ -246,6 +250,8 @@ function Sistema({ perfil }) {
           <div className="w-9 h-9 rounded-full vx-grad text-white grid place-items-center text-xs font-bold shrink-0">{iniciales}</div>
           <div className="min-w-0"><div className="text-sm font-medium truncate">{perfil.nombre}</div><div className="text-xs text-slate-500 truncate">{ROLES[rol]}</div></div>
         </div>
+        <button onClick={() => { setNavOpen(false); setVistaCliente(true); window.scrollTo(0, 0); }} className="w-full flex items-center gap-2 text-sm font-medium text-purple-700 hover:bg-purple-50 rounded-md px-2 py-1.5"><Eye size={15} /> Ver como cliente</button>
+        {can.inv && <button onClick={() => { setNavOpen(false); setModal({ type: "qrManager" }); }} className="w-full flex items-center gap-2 text-sm text-slate-600 hover:bg-slate-50 rounded-md px-2 py-1.5"><QrCode size={15} /> QR de pago</button>}
         <button onClick={() => { setNavOpen(false); setModal({ type: "myPassword" }); }} className="w-full flex items-center gap-2 text-sm text-slate-600 hover:bg-slate-50 rounded-md px-2 py-1.5"><KeyRound size={15} /> Cambiar mi contraseña</button>
         <button onClick={() => supabase.auth.signOut()} className="w-full flex items-center gap-2 text-sm text-slate-600 hover:bg-slate-50 rounded-md px-2 py-1.5"><LogOut size={15} /> Cerrar sesión</button>
       </div>
@@ -307,6 +313,7 @@ function Sistema({ perfil }) {
               <div className="hidden lg:flex items-center gap-2 pl-2 border-l border-slate-200">
                 <div className="w-8 h-8 rounded-full vx-grad text-white grid place-items-center text-xs font-bold">{iniciales}</div>
                 <div className="leading-tight"><div className="text-sm font-medium">{perfil.nombre}</div><div className="text-xs text-slate-500">{ROLES[rol]}</div></div>
+                <button onClick={() => { setVistaCliente(true); window.scrollTo(0, 0); }} className="p-2 rounded-md text-slate-400 hover:bg-slate-100" aria-label="Ver como cliente" title="Ver la tienda como la ve un cliente"><Eye size={16} /></button>
                 <button onClick={() => supabase.auth.signOut()} className="p-2 rounded-md text-slate-400 hover:bg-slate-100" aria-label="Cerrar sesión" title="Cerrar sesión"><LogOut size={16} /></button>
               </div>
             </div>
@@ -346,6 +353,9 @@ function Sistema({ perfil }) {
       {modal?.type === "editSale" && <EditSaleModal {...ctx} ventaId={modal.ventaId} onClose={() => setModal(null)} />}
       {modal?.type === "social" && <SocialImageModal {...ctx} productId={modal.productId} onClose={() => setModal(null)} />}
       {modal?.type === "deleteProducts" && <DeleteProductsModal {...ctx} ids={modal.ids} onDone={modal.onDone} onClose={() => setModal(null)} />}
+      {modal?.type === "qrManager" && <QrManagerModal {...ctx} onClose={() => setModal(null)} />}
+      {modal?.type === "qrAssign" && <QrAssignModal {...ctx} ids={modal.ids} onDone={modal.onDone} onClose={() => setModal(null)} />}
+      {modal?.type === "qrView" && <QrViewModal {...ctx} qrId={modal.qrId} onClose={() => setModal(null)} />}
       {modal?.type === "product" && <ProductModal {...ctx} edit={modal.edit || null} onClose={() => setModal(null)} />}
       {modal?.type === "user" && <UserModal {...ctx} edit={modal.edit || null} onClose={() => setModal(null)} />}
       {modal?.type === "myPassword" && <MyPasswordModal {...ctx} onClose={() => setModal(null)} />}

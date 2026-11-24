@@ -130,3 +130,13 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 - El personal entra con su correo desde el botón **Ingresar** (o “¿Eres parte del equipo?” al pie de la tienda).
 - Las cuentas de clientes **no tienen acceso** a ningún módulo interno: la base de datos se lo impide.
 - Solo el personal puede instalar la app en el celular; a los clientes no se les ofrece.
+- **Ver como cliente:** en el menú (o el ícono del ojo arriba a la derecha en la computadora) puedes ver la tienda tal cual la ve un cliente. Puedes navegar y armar un pedido de prueba, pero no se envía nada. Toca **Volver al sistema** para regresar.
+
+## QR de pago
+
+- En **Inventario → QR de pago** subes la imagen del QR de tu banco (desde la galería o con la cámara) y escribes su monto, por ejemplo Bs 180. Si el QR es de monto libre, deja el monto vacío.
+- Al guardarlo se abre la lista de pares **ya marcados los que tienen ese mismo precio**: revisa y toca **Guardar**. Un mismo QR sirve para todos los pares que quieras.
+- También puedes tocar **Seleccionar varios** en el inventario, marcar los pares y tocar **Asignar QR**.
+- En la ficha de cada par ves su QR y puedes **Compartir** o **Cambiar**. Si el monto del QR no coincide con el precio del par, aparece un aviso.
+- El cliente ve el botón **Pagar con QR** en “Mis pedidos” mientras el par está apartado o le falta pagar. Cuando el pago está completo, el QR ya no se muestra.
+- Los QR se guardan en la misma carpeta de fotos `productos` (no hay que crear otra).

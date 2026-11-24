@@ -19,13 +19,13 @@ async function leerTodo(tabla: string, orden = "creado_en") {
 }
 
 export const DB_VACIA = {
-  users: [], providers: [], lots: [], products: [], clients: [], reservations: [], sales: [], payments: [],
+  users: [], providers: [], lots: [], products: [], clients: [], reservations: [], sales: [], payments: [], qrs: [],
   expenses: [], otherIncome: [], events: [], audit: [],
   config: { canales: [], metodos: [], destinos: [], vigenciaHoras: 48, diasBajaRotacion: 30 },
 };
 
 export async function cargarTodo(esAdmin: boolean) {
-  const [perfiles, cfg, proveedores, lotes, productos, fotos, clientes, reservas, ventas, items, pagos, gastos, otros, eventos, auditoria] = await Promise.all([
+  const [perfiles, cfg, proveedores, lotes, productos, fotos, clientes, reservas, ventas, items, pagos, gastos, otros, eventos, auditoria, qrs] = await Promise.all([
     leerTodo("perfiles"),
     supabase.from("configuracion").select("*").eq("id", 1).maybeSingle(),
     leerTodo("proveedores"),
@@ -41,6 +41,8 @@ export async function cargarTodo(esAdmin: boolean) {
     esAdmin ? leerTodo("otros_ingresos") : Promise.resolve([]),
     leerTodo("eventos", "fecha"),
     esAdmin ? supabase.from("auditoria").select("*").order("ts", { ascending: false }).limit(800) : Promise.resolve({ data: [] }),
+    // QR de pago (si la base todavía no tiene esta tabla, la app sigue funcionando sin ellos)
+    leerTodo("qr_pagos", "creado_en").catch(() => []),
   ]);
   if (cfg.error) throw cfg.error;
   if ((auditoria as any).error) throw (auditoria as any).error;
@@ -52,6 +54,7 @@ export async function cargarTodo(esAdmin: boolean) {
 
   const c = cfg.data || {};
   return {
+    qrs: (qrs as any[]).map((q) => ({ id: q.id, nombre: q.nombre, monto: q.monto == null ? null : num(q.monto), ruta: q.ruta, url: fotoUrl(q.ruta), creado: q.creado_en })),
     users: perfiles.map((u) => ({ id: u.id, nombre: u.nombre || u.email, email: u.email, rolKey: u.rol, rol: ROLES[u.rol] || u.rol, activo: u.activo, estado: u.activo ? "Activo" : "Sin acceso" })),
     providers: proveedores.map((p) => ({ id: p.id, nombre: p.nombre, telefono: p.telefono || "", desde: isoLocal(new Date(p.creado_en)) })),
     lots: lotes.map((l) => ({ id: l.id, nombre: l.nombre, proveedorId: l.proveedor_id, fecha: l.fecha, origen: l.origen, pares: num(l.pares), compra: num(l.costo_compra), transporte: num(l.costo_transporte), otros: num(l.otros_gastos), socio: l.creado_por, obs: l.obs || "" })),
@@ -62,7 +65,7 @@ export async function cargarTodo(esAdmin: boolean) {
         talla: num(p.talla), cm: p.cm == null ? null : num(p.cm), color: p.color, hex: colorHex(p.color), estadoFisico: p.estado_fisico, descripcion: p.descripcion || "", obs: p.obs || "",
         photos: ph, fotos: ph.length, fechaIngreso: p.fecha_ingreso, costoCompra: num(p.costo_compra), costoTransporte: num(p.costo_transporte),
         precio: num(p.precio), estado: p.estado, socio: p.creado_por,
-        bajaMotivo: p.baja_motivo || "", bajaEn: p.baja_en || null, bajaPor: p.baja_por || null,
+        bajaMotivo: p.baja_motivo || "", bajaEn: p.baja_en || null, bajaPor: p.baja_por || null, qrId: p.qr_id || null,
       };
     }),
     clients: clientes.map((x) => ({ id: x.id, nombre: x.nombre, telefono: x.telefono, zona: x.zona || "", direccion: x.direccion || "", obs: x.obs || "", fechaRegistro: isoLocal(new Date(x.creado_en)), cuentaWeb: !!x.usuario_id, email: x.email || "" })),
@@ -233,6 +236,42 @@ export function crearAcciones({ db, me, recargar, toast }) {
       if (n) { auditar("Agregó fotos", p?.codigo, `${n} foto(s)`); toast(`${n} foto(s) agregada(s).`); }
       await recargar();
       return n;
+    },
+    // ---------- QR de pago ----------
+    async createQR(file, nombre, monto, productIds = []) {
+      // Los QR casi no se comprimen: tienen que poder escanearse
+      const grande = file.size > 1.5 * 1024 * 1024;
+      const blob = grande ? await comprimirImagen(file, 1400, 0.95) : file;
+      const ext = grande ? "jpg" : (String(file.name || "").split(".").pop() || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
+      const ruta = `qr/${crypto.randomUUID ? crypto.randomUUID() : Date.now()}.${ext}`;
+      const up = await supabase.storage.from(BUCKET).upload(ruta, blob, { contentType: blob.type || "image/png", upsert: false });
+      if (up.error) return fallo(up.error);
+      const { data: id, error } = await supabase.rpc("crear_qr", { p_nombre: nombre || "", p_monto: monto === "" || monto == null ? null : Number(monto), p_ruta: ruta });
+      if (error) { await supabase.storage.from(BUCKET).remove([ruta]); return fallo(error); }
+      if (productIds.length) {
+        const r = await supabase.rpc("asignar_qr", { p_qr: id, p_productos: productIds, p_reemplazar: false });
+        if (r.error) { fallo(r.error); await recargar(); return id; }
+      }
+      toast(productIds.length ? `QR guardado y asignado a ${productIds.length} par${productIds.length === 1 ? "" : "es"}.` : "QR guardado.");
+      await recargar();
+      return id;
+    },
+    async editQR(qr, nombre, monto) {
+      return rpc("editar_qr", { p_qr: qr.id, p_nombre: nombre, p_monto: monto === "" || monto == null ? null : Number(monto) }, "QR actualizado.");
+    },
+    async assignQR(qrId, productIds, reemplazar = false) {
+      const n = await rpc("asignar_qr", { p_qr: qrId, p_productos: productIds, p_reemplazar: reemplazar });
+      if (n === null) return false;
+      toast(qrId ? `QR asignado a ${productIds.length} par${productIds.length === 1 ? "" : "es"}.` : `Se quitó el QR de ${productIds.length} par${productIds.length === 1 ? "" : "es"}.`);
+      return true;
+    },
+    async deleteQR(qr) {
+      const { data, error } = await supabase.rpc("eliminar_qr", { p_qr: qr.id });
+      if (error) return fallo(error);
+      if (data) await supabase.storage.from(BUCKET).remove([data]);
+      toast("QR eliminado. Los pares que lo usaban quedaron sin QR.");
+      await recargar();
+      return true;
     },
     async reorderPhotos(productId, ids, portada = false) {
       const { error } = await supabase.rpc("ordenar_fotos", { p_producto: productId, p_ids: ids });
