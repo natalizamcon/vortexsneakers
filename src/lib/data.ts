@@ -1,6 +1,7 @@
 // Carga los datos de Supabase y los convierte al formato que usan las pantallas.
 // Las acciones llaman a las operaciones seguras de la base de datos.
 import { supabase, fotoUrl, mensajeError, comprimirImagen, BUCKET, BUCKET_COMPROBANTES } from "./supabase";
+import { prepararVideo, MAX_MB } from "../components/videos";
 import { ROLES, colorHex, isoLocal, addDays, TODAY, bs, fdate } from "./utils";
 
 const num = (v) => Number(v) || 0;
@@ -25,7 +26,7 @@ export const DB_VACIA = {
 };
 
 export async function cargarTodo(esAdmin: boolean) {
-  const [perfiles, cfg, proveedores, lotes, productos, fotos, clientes, reservas, ventas, items, pagos, gastos, otros, eventos, auditoria, qrs, comprobantes] = await Promise.all([
+  const [perfiles, cfg, proveedores, lotes, productos, fotos, clientes, reservas, ventas, items, pagos, gastos, otros, eventos, auditoria, qrs, comprobantes, videos] = await Promise.all([
     leerTodo("perfiles"),
     supabase.from("configuracion").select("*").eq("id", 1).maybeSingle(),
     leerTodo("proveedores"),
@@ -44,12 +45,15 @@ export async function cargarTodo(esAdmin: boolean) {
     // QR de pago (si la base todavía no tiene esta tabla, la app sigue funcionando sin ellos)
     leerTodo("qr_pagos", "creado_en").catch(() => []),
     leerTodo("comprobantes", "creado_en").catch(() => []),
+    leerTodo("producto_videos", "creado_en").catch(() => []),
   ]);
   if (cfg.error) throw cfg.error;
   if ((auditoria as any).error) throw (auditoria as any).error;
 
   const fotosPor = {};
   fotos.forEach((f) => { (fotosPor[f.producto_id] = fotosPor[f.producto_id] || []).push({ id: f.id, ruta: f.ruta, url: fotoUrl(f.ruta), orden: f.orden }); });
+  const videosPor = {};
+  (videos as any[]).forEach((v) => { (videosPor[v.producto_id] = videosPor[v.producto_id] || []).push({ id: v.id, ruta: v.ruta, url: fotoUrl(v.ruta), portada: v.portada || "", portadaUrl: v.portada ? fotoUrl(v.portada) : "", duracion: v.duracion == null ? null : num(v.duracion) }); });
   const itemsPor = {};
   items.forEach((i) => { (itemsPor[i.venta_id] = itemsPor[i.venta_id] || []).push({ id: i.id, productId: i.producto_id, precio: num(i.precio), costo: num(i.costo), activo: i.activo, precioLista: i.precio_lista == null ? null : num(i.precio_lista) }); });
 
@@ -65,7 +69,7 @@ export async function cargarTodo(esAdmin: boolean) {
       return {
         id: p.id, codigo: p.codigo, lote: p.lote_id, marca: p.marca, modelo: p.modelo, origen: p.origen, categoria: p.categoria,
         talla: num(p.talla), cm: p.cm == null ? null : num(p.cm), color: p.color, hex: colorHex(p.color), estadoFisico: p.estado_fisico, descripcion: p.descripcion || "", obs: p.obs || "",
-        photos: ph, fotos: ph.length, fechaIngreso: p.fecha_ingreso, costoCompra: num(p.costo_compra), costoTransporte: num(p.costo_transporte),
+        photos: ph, fotos: ph.length, videos: videosPor[p.id] || [], fechaIngreso: p.fecha_ingreso, costoCompra: num(p.costo_compra), costoTransporte: num(p.costo_transporte),
         precio: num(p.precio), estado: p.estado, socio: p.creado_por,
         bajaMotivo: p.baja_motivo || "", bajaEn: p.baja_en || null, bajaPor: p.baja_por || null, qrId: p.qr_id || null,
       };
@@ -120,7 +124,59 @@ export function crearAcciones({ db, me, recargar, toast }) {
     return n;
   }
 
+  // Sube videos: los reduce si pesan mucho, guarda una portada y los registra en el par
+  async function subirVideos(productId, files, onEstado = (_t: string) => {}) {
+    let n = 0;
+    for (let i = 0; i < files.length; i++) {
+      const pre = files.length > 1 ? `Video ${i + 1} de ${files.length}: ` : "";
+      let v;
+      try { v = await prepararVideo(files[i], (t) => onEstado(pre + t)); }
+      catch (e) { toast(e?.message || "No se pudo leer ese video.", "err"); continue; }
+      onEstado(pre + "Subiendo el video… puede tardar un poco");
+      const base = `${productId}/videos/${Date.now()}-${i}`;
+      const up = await supabase.storage.from(BUCKET).upload(`${base}.${v.ext}`, v.blob, { contentType: v.tipo, upsert: false });
+      if (up.error) {
+        const grande = /size|large|413/i.test(String(up.error.message || up.error));
+        toast(grande ? `El video pesa más de lo que permite Supabase (${MAX_MB} MB). Graba uno más corto.` : "No se pudo subir el video. Revisa tu conexión e inténtalo otra vez.", "err");
+        continue;
+      }
+      let portada = null;
+      if (v.portada) {
+        const pu = await supabase.storage.from(BUCKET).upload(`${base}-portada.jpg`, v.portada, { contentType: "image/jpeg", upsert: false });
+        if (!pu.error) portada = `${base}-portada.jpg`;
+      }
+      const ins = await supabase.from("producto_videos").insert({ producto_id: productId, ruta: `${base}.${v.ext}`, portada, duracion: v.duracion ? Math.round(v.duracion * 10) / 10 : null });
+      if (ins.error) { await supabase.storage.from(BUCKET).remove([`${base}.${v.ext}`, portada].filter(Boolean)); fallo(ins.error); break; }
+      n++;
+    }
+    onEstado("");
+    return n;
+  }
+  // Videos de pares que se borraron por completo (la base ya borró sus filas)
+  async function limpiarVideos(ids) {
+    const rutas = ids.flatMap((id) => (prod(id)?.videos || []).flatMap((v) => [v.ruta, v.portada].filter(Boolean)));
+    if (!rutas.length) return;
+    const { data } = await supabase.from("productos").select("id").in("id", ids);
+    const siguen = new Set((data || []).map((x) => x.id));
+    const borrar = ids.filter((id) => !siguen.has(id)).flatMap((id) => (prod(id)?.videos || []).flatMap((v) => [v.ruta, v.portada].filter(Boolean)));
+    if (borrar.length) await supabase.storage.from(BUCKET).remove(borrar);
+  }
+
   return {
+    async addVideos(productId, files, onEstado) {
+      const p = prod(productId);
+      const n = await subirVideos(productId, files, onEstado);
+      if (n) { auditar("Agregó videos", p?.codigo, `${n} video(s)`); toast(n === 1 ? "Video agregado." : `${n} videos agregados.`); }
+      await recargar();
+      return n;
+    },
+    async deleteVideo(video, codigo) {
+      const del = await supabase.from("producto_videos").delete().eq("id", video.id);
+      if (del.error) return fallo(del.error);
+      await supabase.storage.from(BUCKET).remove([video.ruta, video.portada].filter(Boolean));
+      auditar("Eliminó video", codigo, "");
+      toast("Video eliminado."); await recargar(); return true;
+    },
     async reserve(d) {
       return rpc("reservar_par", {
         p_producto: d.productId, p_cliente: d.clienteId || null, p_canal: d.canal, p_horas: Number(d.horas) || 48,
@@ -218,7 +274,7 @@ export function crearAcciones({ db, me, recargar, toast }) {
       auditar("Editó proveedor", nombre, telefono);
       toast("Proveedor actualizado."); await recargar(); return true;
     },
-    async saveProduct(p, files = [], id = null) {
+    async saveProduct(p, files = [], id = null, vids = [], onEstado = (_t: string) => {}) {
       const fila = {
         lote_id: p.lote, marca: p.marca.trim(), modelo: (p.modelo || "").trim(), origen: p.origen, categoria: p.categoria,
         talla: Number(p.talla), cm: String(p.cm ?? "").trim() === "" ? null : Number(String(p.cm).replace(",", ".")),
@@ -228,8 +284,9 @@ export function crearAcciones({ db, me, recargar, toast }) {
       const { data, error } = await q;
       if (error) return fallo(error);
       const subidas = files.length ? await subirFotos(data.id, files, id ? (prod(id)?.fotos || 0) : 0) : 0;
+      const nv = vids.length ? await subirVideos(data.id, vids, onEstado) : 0;
       auditar(id ? "Editó producto" : "Registró producto", data.codigo, `${data.marca} ${data.modelo} T${data.talla}${subidas ? ` · ${subidas} foto(s)` : ""}`);
-      toast(id ? `${data.codigo} actualizado.` : `${data.codigo} agregado al inventario${subidas ? ` con ${subidas} foto(s)` : ""}.`);
+      toast(id ? `${data.codigo} actualizado${nv ? ` con ${nv} video(s) nuevo(s)` : ""}.` : `${data.codigo} agregado al inventario${subidas ? ` con ${subidas} foto(s)` : ""}${nv ? ` y ${nv} video(s)` : ""}.`);
       await recargar();
       return data.codigo;
     },
@@ -324,6 +381,7 @@ export function crearAcciones({ db, me, recargar, toast }) {
       if (error) return fallo(error);
       const r = data || {};
       if (r.rutas && r.rutas.length) await supabase.storage.from(BUCKET).remove(r.rutas);
+      if (r.borrados) await limpiarVideos(ids);
       const partes = [];
       if (r.borrados) partes.push(`${r.borrados} par(es) eliminado(s) por completo`);
       if (r.baja) partes.push(`${r.baja} par(es) dado(s) de baja (están en la pestaña Eliminados)`);
@@ -339,6 +397,7 @@ export function crearAcciones({ db, me, recargar, toast }) {
       const { data, error } = await supabase.rpc("eliminar_producto", { p_id: p.id });
       if (error) return fallo(error);
       if (data && data.length) await supabase.storage.from(BUCKET).remove(data);
+      await limpiarVideos([p.id]);
       toast(`${p.codigo} eliminado del inventario.`); await recargar(); return true;
     },
     async addDestino(name) {

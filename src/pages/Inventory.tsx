@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn, Gift, QrCode, CheckSquare } from "lucide-react";
+import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn, Gift, QrCode, CheckSquare, Play, Video } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm, itemLista } from "../lib/utils";
 import { FORMATOS, ENCUADRE_INICIAL, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
 import { PhotoPicker, PhotoViewer } from "../components/photos";
+import { VideoPicker, VideoThumb, VideoPlayer } from "../components/videos";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
 export function ProductCard({ p, onClick, children, selected = undefined, onZoom = null }) {
@@ -22,6 +23,7 @@ export function ProductCard({ p, onClick, children, selected = undefined, onZoom
           <span className="absolute top-2 left-2 vx-d text-xs font-bold bg-white rounded-md px-1.5 py-0.5 text-slate-900">{p.codigo}</span>
           <span className="absolute top-2 right-2"><Pill>{p.estado}</Pill></span>
           {!verFotos && <span className="absolute bottom-2 right-2 flex items-center gap-1 text-xs text-slate-500 bg-white rounded px-1.5"><Camera size={11} />{p.fotos}</span>}
+          {p.videos?.length > 0 && <span className="absolute bottom-2 left-2 flex items-center gap-1 text-xs font-semibold text-white bg-slate-900/75 rounded px-1.5 py-0.5" title="Tiene video"><Play size={10} className="fill-white" />{p.videos.length > 1 ? p.videos.length : "Video"}</span>}
         </div>
         <div className="p-3">
           <div className="text-sm font-semibold text-slate-900 truncate">{p.marca} {p.modelo}</div>
@@ -349,6 +351,7 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
             </div>
             {visor && <PhotoViewer urls={p.photos.map((f) => f.url)} start={cur} title={`${p.codigo} · ${p.marca} ${p.modelo}`} onClose={() => setVisor(false)} />}
           </div>
+          {(p.videos.length > 0 || can.inv) && p.estado !== "Eliminado" && <VideosDelPar p={p} actions={actions} can={can} />}
           {p.estado !== "Eliminado" && (
             <Btn variant="lila" className="w-full" onClick={() => { onClose(); setModal({ type: "social", productId: p.id }); }}><Share2 size={15} /> Imagen para redes (precio, talla y cm)</Btn>
           )}
@@ -413,6 +416,8 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
     ? { lote: edit.lote, marca: edit.marca, modelo: edit.modelo, origen: edit.origen, categoria: edit.categoria, talla: edit.talla, color: edit.color, estadoFisico: edit.estadoFisico, precio: edit.precio, descripcion: edit.descripcion, obs: edit.obs, cm: edit.cm ?? "" }
     : { lote: ultimoLote?.id || "", marca: "", modelo: "", origen: "Americano", categoria: "Hombre", talla: 41, cm: "", color: "Blanco", estadoFisico: "Excelente", precio: "", descripcion: "", obs: "" });
   const [files, setFiles] = useState([]);
+  const [vids, setVids] = useState([]);
+  const [estadoVideo, setEstadoVideo] = useState("");
   const [busy, run] = useBusy();
   const [visorNuevo, setVisorNuevo] = useState(null);
   const lot = db.lots.find((l) => l.id === p.lote);
@@ -432,7 +437,7 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
     );
   }
   return (
-    <Modal wide title={edit ? `Editar ${edit.codigo}` : "Nuevo par"} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy || !ok} onClick={() => run(async () => { if (await actions.saveProduct(p, files, edit?.id || null)) onClose(); })}>{busy ? <Spinner /> : null} {edit ? "Guardar cambios" : "Agregar al inventario"}</Btn></>}>
+    <Modal wide title={edit ? `Editar ${edit.codigo}` : "Nuevo par"} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy || !ok} onClick={() => run(async () => { if (await actions.saveProduct(p, files, edit?.id || null, vids, setEstadoVideo)) onClose(); })}>{busy ? <Spinner /> : null} {busy && estadoVideo ? estadoVideo : edit ? "Guardar cambios" : "Agregar al inventario"}</Btn></>}>
       <div className="grid sm:grid-cols-3 gap-4">
         <div>
           {previews.length ? (
@@ -463,6 +468,12 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
             </div>
           )}
           <p className="text-xs text-slate-400 mt-1">Hasta 8 fotos. La del borde amarillo es la portada; toca la estrella de otra para cambiarla.</p>
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <div className="text-xs font-semibold text-slate-700 mb-1.5">Videos (opcional)</div>
+            <div className="flex gap-2"><VideoPicker disabled={busy || vids.length >= 3} onFiles={(nv) => setVids([...vids, ...nv].slice(0, 3))} /></div>
+            {vids.length > 0 && <div className="flex flex-wrap gap-1.5 mt-2">{vids.map((f, i) => <VideoNuevo key={i + f.name} file={f} onQuitar={() => setVids(vids.filter((_, j) => j !== i))} />)}</div>}
+            <p className="text-xs text-slate-400 mt-1">Hasta 3 por vez. Si un video pesa mucho, la app lo hace más liviano antes de subirlo.</p>
+          </div>
         </div>
         <div className="sm:col-span-2 grid grid-cols-2 gap-3">
           <Field label="Lote"><Select value={p.lote} disabled={!!edit && edit.estado === "Vendido"} onChange={(e) => setP({ ...p, lote: e.target.value })} options={db.lots.map((l) => ({ value: l.id, label: `${l.id} · ${l.nombre}` }))} /></Field>
@@ -677,6 +688,45 @@ function QrDelPar({ p, db, can, setModal, onClose }) {
         <Btn size="sm" variant="outline" onClick={() => { onClose(); setModal({ type: "qrView", qrId: qr.id }); }}><Share2 size={13} /> Compartir</Btn>
         {can.inv && <Btn size="sm" variant="ghost" onClick={() => { onClose(); setModal({ type: "qrAssign", ids: [p.id] }); }}>Cambiar</Btn>}
       </div>
+    </div>
+  );
+}
+
+// Vista previa de un video elegido (todavía no subido)
+function VideoNuevo({ file, onQuitar }) {
+  const [url, setUrl] = useState("");
+  const [ver, setVer] = useState(false);
+  useEffect(() => { const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
+  return (
+    <>
+      <VideoThumb v={{ localUrl: url }} onClick={() => setVer(true)} className="w-20 h-14 rounded-md">
+        <button type="button" className="absolute top-0 right-0 bg-white rounded-bl p-0.5 text-rose-600" aria-label="Quitar video" onClick={onQuitar}><X size={12} /></button>
+        <span className="absolute bottom-0 left-0 pointer-events-none text-[10px] text-white bg-black/60 rounded-tr px-1">{(file.size / 1048576).toFixed(0)} MB</span>
+      </VideoThumb>
+      {ver && url && <VideoPlayer url={url} title="Video nuevo" onClose={() => setVer(false)} />}
+    </>
+  );
+}
+
+// Ficha del par: sus videos (ver, agregar, eliminar)
+function VideosDelPar({ p, actions, can }) {
+  const [ver, setVer] = useState(null);
+  const [estado, setEstado] = useState("");
+  const [busy, run] = useBusy();
+  const agregar = (fs) => run(async () => { await actions.addVideos(p.id, fs, setEstado); setEstado(""); });
+  return (
+    <div>
+      <div className="text-xs font-semibold text-slate-700 mb-1.5 flex items-center gap-1.5"><Video size={13} /> Videos{p.videos.length ? ` (${p.videos.length})` : ""}</div>
+      <div className="flex gap-2 overflow-x-auto vx-noscroll">
+        {p.videos.map((v) => (
+          <VideoThumb key={v.id} v={v} onClick={() => setVer(v)} className="w-24 h-16 shrink-0 rounded-lg">
+            {can.inv && <button type="button" disabled={busy} className="absolute top-0.5 right-0.5 p-1 rounded bg-white text-rose-600" aria-label="Eliminar video" onClick={() => { if (confirm("¿Eliminar este video?")) run(() => actions.deleteVideo(v, p.codigo)); }}><Trash2 size={12} /></button>}
+          </VideoThumb>
+        ))}
+        {can.inv && !busy && <VideoPicker compact onFiles={agregar} />}
+      </div>
+      {busy && <div className="mt-2 text-xs text-slate-600 flex items-center gap-2"><Spinner /> {estado || "Trabajando…"}</div>}
+      {ver && <VideoPlayer url={ver.url} title={`${p.codigo} · ${p.marca} ${p.modelo}`} onClose={() => setVer(null)} />}
     </div>
   );
 }

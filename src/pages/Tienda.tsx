@@ -3,12 +3,13 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ShoppingBag, Search, X, ZoomIn, Check, Plus, Trash2, Store, Truck, Package, Clock, LogOut, User,
-  CheckCircle2, AlertTriangle, ChevronRight, MapPin, RefreshCw, QrCode, Download, Eye, ArrowLeft, Upload, Camera, FileText,
+  CheckCircle2, AlertTriangle, ChevronRight, MapPin, RefreshCw, QrCode, Download, Eye, ArrowLeft, Upload, Camera, FileText, Play,
 } from "lucide-react";
 import { supabase, fotoUrl, mensajeError, comprimirImagen, BUCKET_COMPROBANTES } from "../lib/supabase";
 import { bs0, fcm, colorHex, norm, ftime, fdate, DEPARTAMENTOS } from "../lib/utils";
 import { Logo, Isotipo, Btn, Field, Input, Select, inputCls, Modal, PasswordInput, ProductPhoto, Spinner, Pill, useBusy } from "../components/ui";
 import { PhotoViewer } from "../components/photos";
+import { VideoThumb, VideoPlayer } from "../components/videos";
 
 const BOLSA_KEY = "vx-bolsa";
 const leer = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -26,6 +27,7 @@ const aPar = (x) => ({
   ...x, precio: Number(x.precio) || 0, talla: Number(x.talla), cm: x.cm == null ? null : Number(x.cm),
   estadoFisico: x.estado_fisico, hex: colorHex(x.color),
   photos: (x.fotos || []).map((ruta) => ({ id: ruta, url: fotoUrl(ruta) })),
+  videos: (x.videos || []).map((v) => ({ id: v.ruta, url: fotoUrl(v.ruta), portadaUrl: v.portada ? fotoUrl(v.portada) : "", duracion: v.duracion })),
 });
 
 export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVista = () => {} }) {
@@ -186,6 +188,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
                   <article key={p.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col">
                     <div className="relative aspect-square vx-photo">
                       <button className="absolute inset-0" onClick={() => setDetalle(p.id)} aria-label={`Ver ${p.marca} ${p.modelo}`}><ProductPhoto p={p} /></button>
+                      {p.videos.length > 0 && <span className="absolute top-2 right-2 pointer-events-none flex items-center gap-1 text-xs font-semibold text-white bg-slate-900/75 rounded-md px-2 py-0.5"><Play size={11} className="fill-white" /> Video</span>}
                       {p.photos.length > 0 && (
                         <button onClick={() => setVisor(p)} className="absolute bottom-2 right-2 flex items-center gap-1 text-xs font-semibold text-slate-800 bg-white rounded-md px-2 py-1 shadow" aria-label={`Ver fotos de ${p.marca} ${p.modelo}`}>
                           <ZoomIn size={13} /> {p.photos.length > 1 ? `${p.photos.length} fotos` : "Foto"}
@@ -258,6 +261,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
 
 function DetallePar({ p, enBolsa, onAlternar, onFotos, onClose }) {
   const [i, setI] = useState(0);
+  const [video, setVideo] = useState(null);
   return (
     <Modal wide title={`${p.marca} ${p.modelo}`} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn variant={enBolsa ? "outline" : "primary"} onClick={onAlternar}>{enBolsa ? <><Trash2 size={15} /> Quitar de mi pedido</> : <><Plus size={15} /> Lo quiero</>}</Btn></>}>
       <div className="grid sm:grid-cols-2 gap-4">
@@ -267,15 +271,18 @@ function DetallePar({ p, enBolsa, onAlternar, onFotos, onClose }) {
             {p.photos[i] && <button className="absolute inset-0 cursor-zoom-in" onClick={() => onFotos(i)} aria-label="Ver la foto en pantalla completa" />}
             {p.photos[i] && <span className="absolute top-2 right-2 pointer-events-none flex items-center gap-1 text-xs font-semibold bg-white text-slate-800 rounded-md px-2 py-1 shadow"><ZoomIn size={13} /> Ampliar</span>}
           </div>
-          {p.photos.length > 1 && (
+          {(p.photos.length > 1 || p.videos.length > 0) && (
             <div className="flex gap-2 mt-2 overflow-x-auto vx-noscroll">
-              {p.photos.map((f, n) => (
+              {p.videos.map((v) => <VideoThumb key={v.id} v={v} onClick={() => setVideo(v)} className="w-20 h-14 shrink-0 rounded-lg" />)}
+              {p.photos.length > 1 && p.photos.map((f, n) => (
                 <button key={f.id} onClick={() => setI(n)} className={`w-16 h-14 shrink-0 rounded-lg overflow-hidden border-2 ${n === i ? "border-purple-700" : "border-transparent"}`} aria-label={`Foto ${n + 1}`}>
                   <img src={f.url} alt="" className="w-full h-full object-cover" />
                 </button>
               ))}
             </div>
           )}
+          {p.videos.length > 0 && <button onClick={() => setVideo(p.videos[0])} className="mt-2 w-full flex items-center justify-center gap-1.5 rounded-lg border border-slate-300 py-2 text-sm font-semibold text-slate-800 hover:bg-slate-50"><Play size={15} className="fill-slate-800" /> Ver video{p.videos.length > 1 ? `s (${p.videos.length})` : ""}</button>}
+          {video && <VideoPlayer url={video.url} title={`${p.marca} ${p.modelo}`} onClose={() => setVideo(null)} />}
         </div>
         <div className="space-y-4">
           <div>

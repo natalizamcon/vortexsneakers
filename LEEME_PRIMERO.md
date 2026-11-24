@@ -151,3 +151,10 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 6. El cliente ve el seguimiento: Pedido recibido → Pago → Preparando → Enviado (o En la paquetería) → Entregado, y su WhatsApp de contacto.
 - En **Configuración → Tienda en línea** escribe el **WhatsApp de contacto** y los datos de la **paquetería en Cochabamba**.
 - Los comprobantes se guardan en una carpeta **privada** llamada `comprobantes`.
+
+## Videos de los pares
+
+- Al crear o editar un par, y en la ficha de cada par, tienes **Grabar video** y **Subir video**.
+- **Grabar video** abre la cámara dentro de la app (hasta 1 minuto). Puedes cambiar de cámara, activar el sonido, revisar el video y repetirlo antes de usarlo.
+- **Subir video** toma uno de tu galería. Si pesa más de 48 MB, la app lo hace más liviano antes de subirlo (tarda lo mismo que dura el video y queda sin sonido). Videos de hasta 3 minutos.
+- Los clientes ven los videos en la tienda: en el catálogo aparece la etiqueta **Video** y en el detalle del par el botón **Ver video**.

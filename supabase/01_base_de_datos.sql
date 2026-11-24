@@ -2226,6 +2226,56 @@ grant execute on function public.aprobar_comprobante(uuid, numeric, text, date, 
 grant execute on function public.rechazar_comprobante(uuid, text) to authenticated;
 grant execute on function public.cliente_mis_pedidos() to authenticated;
 
+-- =====================================================================
+--  VIDEOS DE LOS PARES
+--  Cada par puede tener videos (grabados en la app o subidos desde la
+--  galería). Se guardan en la misma carpeta "productos" y los ve el
+--  público en la tienda. Las fotos y la portada no cambian.
+-- =====================================================================
+
+create table if not exists public.producto_videos (
+  id          uuid primary key default gen_random_uuid(),
+  producto_id uuid not null references public.productos(id) on delete cascade,
+  ruta        text not null,
+  portada     text,               -- imagen de vista previa (opcional)
+  duracion    numeric(7,1),       -- segundos
+  creado_en   timestamptz not null default now()
+);
+create index if not exists videos_producto_idx on public.producto_videos(producto_id);
+alter table public.producto_videos enable row level security;
+drop policy if exists vx_leer on public.producto_videos;
+create policy vx_leer on public.producto_videos for select to authenticated using (public.es_activo());
+drop policy if exists vx_crear on public.producto_videos;
+create policy vx_crear on public.producto_videos for insert to authenticated with check (public.tiene_rol(array['admin','inventario']));
+drop policy if exists vx_borrar on public.producto_videos;
+create policy vx_borrar on public.producto_videos for delete to authenticated using (public.tiene_rol(array['admin','inventario']));
+
+do $$
+begin
+  execute 'alter publication supabase_realtime add table public.producto_videos';
+exception when others then null;
+end $$;
+
+-- Catálogo público: ahora incluye los videos de cada par
+create or replace function public.catalogo_publico()
+returns jsonb language plpgsql security definer set search_path = public as $$
+begin
+  perform public._liberar_vencidas();
+  return coalesce((
+    select jsonb_agg(jsonb_build_object(
+      'id', p.id, 'codigo', p.codigo, 'marca', p.marca, 'modelo', p.modelo, 'categoria', p.categoria,
+      'talla', p.talla, 'cm', p.cm, 'color', p.color, 'estado_fisico', p.estado_fisico,
+      'descripcion', p.descripcion, 'precio', p.precio, 'ingreso', p.fecha_ingreso,
+      'fotos', coalesce((select jsonb_agg(f.ruta order by f.orden, f.creado_en) from public.producto_fotos f where f.producto_id = p.id), '[]'::jsonb),
+      'videos', coalesce((select jsonb_agg(jsonb_build_object('ruta', v.ruta, 'portada', v.portada, 'duracion', v.duracion) order by v.creado_en)
+                            from public.producto_videos v where v.producto_id = p.id), '[]'::jsonb)
+    ) order by p.fecha_ingreso desc, p.codigo desc)
+    from public.productos p
+    where p.estado = 'Disponible'), '[]'::jsonb);
+end $$;
+
+grant execute on function public.catalogo_publico() to anon, authenticated;
+
 -- Avisar a Supabase que hay funciones nuevas
 notify pgrst, 'reload schema';
 
