@@ -21,7 +21,7 @@ async function leerTodo(tabla: string, orden = "creado_en") {
 export const DB_VACIA = {
   users: [], providers: [], lots: [], products: [], clients: [], reservations: [], sales: [], payments: [], qrs: [], comprobantes: [],
   expenses: [], otherIncome: [], events: [], audit: [],
-  config: { canales: [], metodos: [], destinos: [], vigenciaHoras: 48, diasBajaRotacion: 30 },
+  config: { canales: [], metodos: [], destinos: [], vigenciaHoras: 48, diasBajaRotacion: 30, whatsapp: "", paqueteria: "" },
 };
 
 export async function cargarTodo(esAdmin: boolean) {
@@ -88,6 +88,7 @@ export async function cargarTodo(esAdmin: boolean) {
     config: {
       canales: c.canales || [], metodos: c.metodos || [], destinos: c.destinos || [],
       vigenciaHoras: c.vigencia_horas || 48, diasBajaRotacion: c.dias_baja_rotacion || 30,
+      whatsapp: c.whatsapp || "", paqueteria: c.paqueteria_cbba || "",
     },
   };
 }
@@ -351,6 +352,8 @@ export function crearAcciones({ db, me, recargar, toast }) {
       if (cfg.destinos) fila.destinos = cfg.destinos;
       if (cfg.vigenciaHoras) fila.vigencia_horas = cfg.vigenciaHoras;
       if (cfg.diasBajaRotacion) fila.dias_baja_rotacion = cfg.diasBajaRotacion;
+      if (cfg.whatsapp !== undefined) fila.whatsapp = String(cfg.whatsapp).replace(/[^0-9+]/g, "");
+      if (cfg.paqueteria !== undefined) fila.paqueteria_cbba = String(cfg.paqueteria).trim().slice(0, 300);
       const { error } = await supabase.from("configuracion").update(fila).eq("id", 1);
       if (error) return fallo(error);
       toast("Configuración guardada."); await recargar(); return true;

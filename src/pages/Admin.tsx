@@ -55,6 +55,7 @@ export function ConfigPage({ db, actions }) {
             <Field label="Baja rotación desde"><Select value={cfg.diasBajaRotacion} onChange={(e) => actions.setConfig({ diasBajaRotacion: Number(e.target.value) })} options={[15, 30, 45, 60].map((d) => ({ value: d, label: `${d} días` }))} /></Field>
           </div>
         </Panel>
+        <TiendaConfig cfg={cfg} actions={actions} />
         <Panel title="Identidad visual">
           <div className="flex gap-3">{[["Turquesa", C.teal], ["Lila", C.lila], ["Blanco", "#ffffff"], ["Gris", C.gray], ["Tinta", C.ink]].map(([n, h]) => <div key={n} className="text-center"><div className="w-12 h-12 rounded-xl border border-slate-200" style={{ background: h }} /><div className="text-xs text-slate-500 mt-1">{n}</div></div>)}</div>
         </Panel>
@@ -178,5 +179,21 @@ export function MyPasswordModal({ onClose, actions }) {
       <Field label="Nueva contraseña"><PasswordInput value={a} onChange={(e) => setA(e.target.value)} autoComplete="new-password" /></Field>
       <Field label="Repite la nueva contraseña" hint={b && a !== b ? "No coinciden." : null}><PasswordInput value={b} onChange={(e) => setB(e.target.value)} autoComplete="new-password" /></Field>
     </Modal>
+  );
+}
+
+// Datos que ven los clientes de la tienda en línea
+function TiendaConfig({ cfg, actions }) {
+  const [wa, setWa] = useState(cfg.whatsapp || "");
+  const [paq, setPaq] = useState(cfg.paqueteria || "");
+  const cambios = wa !== (cfg.whatsapp || "") || paq !== (cfg.paqueteria || "");
+  return (
+    <Panel title="Tienda en línea" sub="Lo ven los clientes en sus pedidos">
+      <div className="space-y-3">
+        <Field label="WhatsApp de contacto" hint="Aparece cuando un pago se aprueba, se rechaza o está en revisión."><Input type="tel" inputMode="tel" placeholder="Ej.: 71234567" value={wa} onChange={(e) => setWa(e.target.value)} /></Field>
+        <Field label="Paquetería en Cochabamba (nombre y dirección)" hint="Se muestra a quien elige recoger en Cochabamba."><Input value={paq} maxLength={300} placeholder="Ej.: Paquetería X, Av. Ayacucho y Aroma" onChange={(e) => setPaq(e.target.value)} /></Field>
+        <div className="flex justify-end"><Btn disabled={!cambios} onClick={() => actions.setConfig({ whatsapp: wa, paqueteria: paq })}>Guardar</Btn></div>
+      </div>
+    </Panel>
   );
 }

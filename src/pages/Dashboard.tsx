@@ -115,7 +115,7 @@ export function Dashboard({ db, m, go, userName, setModal }) {
           <ul className="space-y-2 text-sm">
             {[
               [BellRing, `${agendaEvents(db).filter((e) => reminderState(e)).length} recordatorios de la agenda`, "agenda", "lila"],
-              [ShoppingBag, `${new Set(db.reservations.filter((r) => r.web && r.estado === "Activa").map((r) => r.pedidoWeb)).size} pedidos de la tienda en línea esperando pago`, "reservas", "lila"],
+              [ShoppingBag, `${new Set(db.reservations.filter((r) => r.web && r.estado === "Por pagar").map((r) => r.pedidoWeb)).size} pedidos de la tienda en línea esperando pago`, "reservas", "lila"],
               [CheckCircle2, `${db.comprobantes.filter((c) => c.estado === "En revisión").length} comprobantes de pago por revisar`, "reservas", "lila"],
               [Clock, `${expiring.length} reservas vencen en menos de 12 h`, "reservas", "lila"],
               [Truck, `${pendOrders.length} pedidos sin entregar`, "pedidos", "slate"],

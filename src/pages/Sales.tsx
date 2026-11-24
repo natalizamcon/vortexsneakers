@@ -339,7 +339,7 @@ export function Reservations({ db, actions, setModal, client, prod, userName, ca
   const [tab, setTab] = useState("Activa");
   const [soloWeb, setSoloWeb] = useState(false);
   const list = db.reservations.filter((r) => r.estado === tab && (!soloWeb || r.web)).sort((a, b) => (tab === "Activa" ? a.vence.localeCompare(b.vence) : b.creado.localeCompare(a.creado)));
-  const webActivos = new Set(db.reservations.filter((r) => r.web && r.estado === "Activa").map((r) => r.pedidoWeb)).size;
+  const webActivos = new Set(db.reservations.filter((r) => r.web && r.estado === "Por pagar").map((r) => r.pedidoWeb)).size;
   // Un pedido de la tienda puede traer varios pares: se convierten todos juntos
   const convertir = (r) => {
     const grupo = r.web && r.pedidoWeb ? db.reservations.filter((x) => x.pedidoWeb === r.pedidoWeb && x.estado === "Activa") : [r];
@@ -376,7 +376,7 @@ export function Reservations({ db, actions, setModal, client, prod, userName, ca
     <div>
       <PageHead title="Reservas" route="/reservas" desc="Una reserva bloquea el par hasta que vence, se cancela o se convierte en venta. Los pedidos de la tienda en línea también llegan aquí." />
       <ComprobantesPendientes db={db} client={client} setModal={setModal} />
-      {webActivos > 0 && <div className="mb-3"><Note tone="teal">Tienes {webActivos} pedido{webActivos === 1 ? "" : "s"} de la tienda en línea esperando pago. El cliente paga con el QR y sube su comprobante; cuando llegue, tócalo para revisarlo y aprobarlo.</Note></div>}
+      {webActivos > 0 && <div className="mb-3"><Note tone="teal">Hay {webActivos} pedido{webActivos === 1 ? "" : "s"} de la tienda esperando pago. Los pares siguen a la venta: se aparta para quien sube primero su comprobante, y entonces aparece aquí para que lo revises.</Note></div>}
       <div className="flex flex-wrap items-center gap-2 mb-4">
         <div className="flex gap-1 bg-white border border-slate-200 rounded-lg p-1 w-fit max-w-full overflow-x-auto vx-noscroll">
           {[["Activa", "Activas"], ["Convertida", "Convertidas en venta"], ["Cancelada", "Canceladas"]].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-3 py-1.5 text-sm rounded-md whitespace-nowrap ${tab === k ? "bg-purple-600 text-white" : "text-slate-600"}`}>{l} ({db.reservations.filter((r) => r.estado === k && (!soloWeb || r.web)).length})</button>)}
@@ -542,7 +542,7 @@ export function OrderDetail({ db, ventaId, onClose, actions, client, userName, s
           <div className="text-slate-600 mt-1">{e.tipo === "Recojo en punto" ? "Recojo" : "Envío"}: {fdate(e.fechaEstimada)}</div>
           {e.tipo !== "Recojo en punto" && <div className="text-slate-600">Costo {bs(e.costo)} · paga {e.pagaCliente ? "el cliente" : "el negocio"}</div>}
           {e.transportista && <div className="text-slate-600">Empresa: {e.transportista}</div>}
-          {e.recibe && <div className="text-slate-600">Recoge: {e.recibe}</div>}
+          {e.recibe && <div className="text-slate-600">Recoge: {e.recibe}{e.ci ? ` · CI ${e.ci}` : ""}</div>}
           {e.guia && <div className="text-slate-600">Guía: <b>{e.guia}</b></div>}
           {s.estado === "Activa" && s.pedido !== "Entregado" && e.tipo !== "Recojo en punto" && <ProgramarEnvio s={s} actions={actions} />}
         </div>

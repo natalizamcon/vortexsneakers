@@ -70,7 +70,7 @@ export function RevisarPagoModal({ db, comprobanteId, actions, client, onClose, 
             <div className="font-semibold">{cl?.nombre || "Cliente"}</div>
             {cl?.telefono && <a className="text-purple-700 flex items-center gap-1 mt-0.5" href={waLink(cl.telefono, `Hola ${cl.nombre.split(" ")[0]}, te escribimos de VORTEX SNEAKERS por el pago de tu pedido ${c.pedido}.`)} target="_blank" rel="noreferrer"><Phone size={13} /> {cl.telefono} · WhatsApp</a>}
             <div className="text-slate-600 flex items-start gap-1 mt-1"><MapPin size={13} className="mt-0.5 shrink-0" />{entregaWeb(envio)}</div>
-            {envio.recibe && <div className="text-slate-600 text-xs mt-0.5">Recoge: {envio.recibe}</div>}
+            {envio.recibe && <div className="text-slate-600 text-xs mt-0.5">Recoge: {envio.recibe}{envio.ci ? ` · CI ${envio.ci}` : ""}</div>}
           </div>
           <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
             {pares.map(({ r, p }) => (
@@ -91,10 +91,10 @@ export function RevisarPagoModal({ db, comprobanteId, actions, client, onClose, 
             <div className="space-y-2">
               <Field label="¿Por qué lo rechazas? (el cliente lo verá)"><Input value={motivo} maxLength={200} autoFocus onChange={(e) => setMotivo(e.target.value)} placeholder="Ej.: el monto no coincide" /></Field>
               <div className="flex flex-wrap gap-1.5">{MOTIVOS.map((m) => <button key={m} onClick={() => setMotivo(m)} className="text-xs rounded-full border border-slate-300 px-2.5 py-1 hover:bg-slate-50">{m}</button>)}</div>
-              <p className="text-xs text-slate-500">Los pares siguen apartados 24 horas más para que suba otro comprobante.</p>
+              <p className="text-xs text-slate-500">El pedido se cancela y los pares vuelven al catálogo. El cliente verá el motivo y tu WhatsApp.</p>
             </div>
           ) : !pares.length ? (
-            <Note tone="rose">Si ya registraste esta venta a mano, toca <b>Aprobar pago</b> para cerrar el comprobante (no se cobra dos veces).</Note>
+            <Note tone="rose">Este pedido ya no tiene pares apartados: otra persona pagó primero. Recházalo (ej.: “otra persona pagó primero, te devolvemos tu dinero”) y escríbele al cliente. Si ya registraste la venta a mano, toca <b>Aprobar pago</b> solo para cerrar el comprobante.</Note>
           ) : (
             <>
               <div className="grid grid-cols-2 gap-3">

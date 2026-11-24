@@ -143,10 +143,11 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 
 ## Pago con comprobante y seguimiento del envío
 
-1. El cliente compra (ya no existe la opción de reservar) y en **Mis pedidos** paga con el QR.
-2. Sube la foto o captura de su comprobante. El pedido queda **En revisión** y ya no vence mientras lo revisan.
-3. A ustedes les llega un aviso y en **Reservas** aparece “comprobantes de pago por revisar”. Al tocarlo ven el comprobante, el pedido y el monto.
-4. **Aprobar pago**: escribes cuánto llegó, el método y la fecha en que lo envías o lo dejas en la paquetería (y el n.º de guía si ya lo tienes). Se registra la venta pagada, los pares pasan al historial y **la foto del comprobante se borra**.
-5. **Rechazar**: escribes el motivo; el cliente lo ve y puede subir otro (se le dan 24 horas más).
-6. El cliente ve el seguimiento: Pedido recibido → Pago → Preparando → Enviado (o En la paquetería) → Entregado. Ustedes lo avanzan como siempre desde **Pedidos**, y ahí mismo pueden cambiar la fecha de envío o el n.º de guía.
-- Los comprobantes se guardan en una carpeta **privada** llamada `comprobantes` (la crea el script 08). Solo el cliente dueño y el personal de ventas pueden verlos.
+1. El cliente toca **Comprar** y pasa directo a pagar en **Mis pedidos**. **No se aparta nada:** los pares siguen en el catálogo y se los lleva quien pague primero.
+2. Paga con el QR y sube su comprobante. En ese momento los pares se apartan para él (si nadie pagó antes) y el pedido queda **En revisión**.
+3. En **Reservas** aparece “comprobantes de pago por revisar”. Al tocarlo ven el comprobante, el pedido, quién recoge y su CI.
+4. **Aprobar pago**: escribes cuánto llegó y la fecha en que lo envías o lo dejas en la paquetería. Se registra la venta pagada, los pares pasan al historial y **la foto del comprobante se borra**.
+5. **Rechazar**: escribes el motivo; el pedido se cancela y **los pares vuelven al catálogo**.
+6. El cliente ve el seguimiento: Pedido recibido → Pago → Preparando → Enviado (o En la paquetería) → Entregado, y su WhatsApp de contacto.
+- En **Configuración → Tienda en línea** escribe el **WhatsApp de contacto** y los datos de la **paquetería en Cochabamba**.
+- Los comprobantes se guardan en una carpeta **privada** llamada `comprobantes`.

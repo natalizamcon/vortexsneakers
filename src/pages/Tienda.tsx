@@ -33,7 +33,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   const llaveBolsa = vistaPrevia ? BOLSA_KEY + "-vista" : BOLSA_KEY;
   const [cat, setCat] = useState(null);
   const [error, setError] = useState("");
-  const [cfg, setCfg] = useState({ destinos: DEPARTAMENTOS, vigencia_horas: 48 });
+  const [cfg, setCfg] = useState({ destinos: DEPARTAMENTOS, vigencia_horas: 48, whatsapp: "", paqueteria: "" });
   const [vista, setVista] = useState("catalogo");
   const [q, setQ] = useState("");
   const [talla, setTalla] = useState("");
@@ -45,7 +45,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   const [bolsaAbierta, setBolsaAbierta] = useState(false);
   const [auth, setAuth] = useState(null); // { modo, motivo }
   const [cuentaAbierta, setCuentaAbierta] = useState(false);
-  const [exito, setExito] = useState(null);
+  const [destacar, setDestacar] = useState("");
   const [toasts, setToasts] = useState([]);
 
   const toast = useCallback((msg, tone = "ok") => {
@@ -70,7 +70,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
 
   useEffect(() => {
     cargar();
-    supabase.rpc("tienda_config").then(({ data }) => { if (data) setCfg({ destinos: data.destinos?.length ? data.destinos : DEPARTAMENTOS, vigencia_horas: data.vigencia_horas || 48 }); });
+    supabase.rpc("tienda_config").then(({ data }) => { if (data) setCfg({ destinos: data.destinos?.length ? data.destinos : DEPARTAMENTOS, vigencia_horas: data.vigencia_horas || 48, whatsapp: data.whatsapp || "", paqueteria: data.paqueteria || "" }); });
     const t = setInterval(cargar, 60000);
     const vis = () => { if (document.visibilityState === "visible") cargar(); };
     document.addEventListener("visibilitychange", vis);
@@ -136,7 +136,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
       </header>
 
       {vista === "pedidos" && cuenta ? (
-        <MisPedidos onVolver={() => setVista("catalogo")} toast={toast} recargarCatalogo={cargar} />
+        <MisPedidos onVolver={() => setVista("catalogo")} toast={toast} recargarCatalogo={cargar} cfg={cfg} destacar={destacar} />
       ) : (
         <>
           <section className="bg-slate-900 text-white relative overflow-hidden">
@@ -238,25 +238,12 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
           onQuitar={(id) => setBolsa(bolsa.filter((x) => x !== id))}
           onClose={() => setBolsaAbierta(false)}
           onNecesitaCuenta={() => { if (vistaPrevia) { toast("Vista de cliente: aquí el cliente crearía su cuenta y enviaría el pedido. No se envió nada."); return; } try { sessionStorage.setItem("vx-abrir-bolsa", "1"); } catch {} setBolsaAbierta(false); setAuth({ modo: "crear", motivo: "Para enviar tu pedido, crea tu cuenta o ingresa. Tus pares siguen guardados." }); }}
-          onEnviado={(pedido, info) => { setBolsa([]); setBolsaAbierta(false); setExito({ pedido, ...info }); cargar(); }}
+          onEnviado={(pedido) => { setBolsa([]); setBolsaAbierta(false); setDestacar(pedido); setVista("pedidos"); window.scrollTo(0, 0); toast(`Pedido ${pedido} creado. Ahora paga con el QR y sube tu comprobante.`); cargar(); }}
           onError={async (msg) => { toast(msg, "err"); await cargar(); }}
         />
       )}
       {auth && <Acceso modo={auth.modo} motivo={auth.motivo} onClose={() => { setAuth(null); try { sessionStorage.removeItem("vx-abrir-bolsa"); } catch {} }} />}
       {cuentaAbierta && cuenta && <MiCuenta cuenta={cuenta} onClose={() => setCuentaAbierta(false)} onSalir={salir} onGuardado={(c) => { onCuentaCambio(c); toast("Datos guardados."); }} onPedidos={() => { setCuentaAbierta(false); setVista("pedidos"); }} />}
-      {exito && (
-        <Modal title="¡Pedido recibido!" onClose={() => setExito(null)} footer={<><Btn variant="ghost" onClick={() => setExito(null)}>Seguir viendo</Btn><Btn onClick={() => { setExito(null); setVista("pedidos"); }}><QrCode size={15} /> Pagar ahora</Btn></>}>
-          <div className="flex flex-col items-center text-center gap-3 py-2">
-            <CheckCircle2 size={44} className="text-cyan-600" />
-            <p className="text-base font-semibold text-slate-900">Tu pedido {exito.pedido} está apartado por {cfg.vigencia_horas} horas.</p>
-            <ol className="text-sm text-slate-600 text-left space-y-1.5 list-decimal pl-5">
-              <li>Entra a <b>Mis pedidos</b> y paga con el QR.</li>
-              <li>Sube la foto de tu comprobante.</li>
-              <li>Verificamos el pago y te mostramos la fecha en que {exito.modo === "cochabamba" ? "lo dejamos en la paquetería" : "lo enviamos"}.</li>
-            </ol>
-          </div>
-        </Modal>
-      )}
 
       <div className="fixed bottom-20 sm:bottom-4 left-3 right-3 sm:left-auto sm:right-4 z-50 space-y-2 sm:max-w-sm" aria-live="polite">
         {toasts.map((t) => (
@@ -316,22 +303,22 @@ function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnvi
   const [modo, setModo] = useState("cochabamba");
   const [destino, setDestino] = useState("");
   const [otroDestino, setOtroDestino] = useState("");
-  const [transportista, setTransportista] = useState("");
   const [recibe, setRecibe] = useState(cuenta?.nombre || "");
+  const [ci, setCi] = useState("");
   const [nota, setNota] = useState("");
   const [busy, run] = useBusy();
   const total = pares.reduce((a, p) => a + p.precio, 0);
   const destinoFinal = destino === "__otro" ? otroDestino.trim() : destino;
-  const falta = !pares.length ? "Agrega al menos un par." : modo === "envio" && !destinoFinal ? "Elige o escribe a dónde se envía." : "";
+  const falta = !pares.length ? "Agrega al menos un par." : modo === "envio" && !destinoFinal ? "Elige o escribe a dónde se envía." : cuenta && !recibe.trim() ? "Escribe el nombre de quien recoge." : cuenta && ci.trim().length < 4 ? "Escribe el carnet (CI) de quien recoge." : "";
   const enviar = () => run(async () => {
     if (!cuenta) { onNecesitaCuenta(); return; }
     const { data, error } = await supabase.rpc("cliente_pedir", {
       p_productos: pares.map((p) => p.id), p_tipo: "Compra",
-      p_envio: { modo, destino: modo === "envio" ? destinoFinal : "Cochabamba", transportista, recibe },
+      p_envio: { modo, destino: modo === "envio" ? destinoFinal : "Cochabamba", recibe, ci },
       p_nota: nota,
     });
     if (error) { onError(mensajeError(error)); return; }
-    onEnviado(data, { n: pares.length, modo });
+    onEnviado(data);
   });
   return (
     <Modal wide title="Mi pedido" onClose={onClose} footer={<>
@@ -365,6 +352,7 @@ function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnvi
               ))}
             </div>
           </div>
+          {modo === "cochabamba" && cfg.paqueteria && <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700 flex gap-2"><MapPin size={14} className="shrink-0 text-slate-400" /><span>Recoges en: <b>{cfg.paqueteria}</b></span></div>}
           {modo === "envio" && (
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="¿A dónde lo enviamos?">
@@ -374,11 +362,11 @@ function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnvi
             </div>
           )}
           <div className="grid sm:grid-cols-2 gap-3">
-            <Field label="Quién recoge (nombre y carnet)"><Input value={recibe} maxLength={120} placeholder="Ej.: Ana Pérez, CI 1234567" onChange={(e) => setRecibe(e.target.value)} /></Field>
-            <Field label="Paquetería que prefieres (opcional)"><Input value={transportista} maxLength={80} placeholder="Ej.: la de tu preferencia" onChange={(e) => setTransportista(e.target.value)} /></Field>
+            <Field label="Nombre de quien recoge"><Input value={recibe} maxLength={100} autoComplete="name" placeholder="Nombre completo" onChange={(e) => setRecibe(e.target.value)} /></Field>
+            <Field label="Carnet de identidad (CI)" hint="Te lo pedirán en la paquetería para entregarte."><Input value={ci} maxLength={30} placeholder="Ej.: 1234567 CB" onChange={(e) => setCi(e.target.value)} /></Field>
           </div>
           <Field label="Nota para nosotros (opcional)"><Input value={nota} maxLength={300} placeholder="Algo que debamos saber" onChange={(e) => setNota(e.target.value)} /></Field>
-          <div className="rounded-xl bg-purple-50 p-3 text-xs text-purple-900 flex gap-2"><QrCode size={16} className="shrink-0 text-purple-700" /><span>Al comprar, te apartamos {pares.length === 1 ? "el par" : "los pares"} por {cfg.vigencia_horas} horas. En <b>Mis pedidos</b> pagas con el QR y subes la foto de tu comprobante. Cuando verifiquemos el pago, te avisamos la fecha de envío.{modo === "envio" ? " El costo de la encomienda lo pagas al recoger." : ""}</span></div>
+          <div className="rounded-xl bg-purple-50 p-3 text-xs text-purple-900 flex gap-2"><QrCode size={16} className="shrink-0 text-purple-700" /><span>Al tocar <b>Comprar</b> pasas directo a pagar con el QR. <b>No apartamos pares:</b> se lo lleva quien pague primero y suba su comprobante. Cuando verifiquemos el pago, te avisamos la fecha de envío.{modo === "envio" ? " El costo de la encomienda lo pagas al recoger." : ""}</span></div>
           {!cuenta && <div className="rounded-xl bg-cyan-50 p-3 text-sm text-cyan-900 flex gap-2"><User size={16} className="shrink-0 mt-0.5" /> Para comprar necesitas una cuenta. Te pediremos tu nombre, teléfono y correo; tus pares siguen guardados.</div>}
           {falta && pares.length > 0 && <p className="text-xs text-amber-700">{falta}</p>}
         </>
@@ -489,12 +477,24 @@ const ETAPAS_LISTO = ["Listo para entregar", "Enviado", "Entregado"];
 
 /** Estado de un pedido completo (todos sus pares) para mostrar el seguimiento */
 function estadoPedido(items) {
-  const activas = items.filter((x) => x.estado === "Activa");
+  const porPagar = items.filter((x) => x.estado === "Por pagar");
+  const libres = porPagar.filter((x) => x.disponible);
+  const apartados = items.filter((x) => x.estado === "Activa"); // con comprobante en revisión
   const conVenta = items.find((x) => x.venta && x.venta.estado === "Activa");
   const v = conVenta?.venta || null;
   const comp = items.find((x) => x.comprobante)?.comprobante || null;
-  const cancelado = !activas.length && !v;
-  return { activas, v, comp, cancelado, envio: items[0].envio || {}, vence: activas[0]?.vence };
+  const cancelado = !porPagar.length && !apartados.length && !v;
+  return { porPagar, libres, apartados, v, comp, cancelado, envio: items[0].envio || {}, vence: porPagar[0]?.vence };
+}
+
+const waTienda = (tel, texto) => `https://wa.me/${String(tel).startsWith("591") || String(tel).startsWith("+") ? String(tel).replace("+", "") : "591" + tel}?text=${encodeURIComponent(texto)}`;
+function Contacto({ cfg, pedido, texto = "¿Tienes dudas? Escríbenos" }) {
+  if (!cfg?.whatsapp) return null;
+  return (
+    <a href={waTienda(cfg.whatsapp, `Hola VORTEX SNEAKERS, les escribo por mi pedido ${pedido}.`)} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2.5 text-sm text-cyan-900 hover:bg-cyan-100">
+      <span>{texto} por WhatsApp: <b>{cfg.whatsapp}</b></span><ChevronRight size={16} />
+    </a>
+  );
 }
 
 function Seguimiento({ est }) {
@@ -541,9 +541,10 @@ function SubirComprobante({ pedido, total, toast, onListo }) {
     const ruta = `${uid}/${pedido}-${Date.now()}.${ext}`;
     const up = await supabase.storage.from(BUCKET_COMPROBANTES).upload(ruta, blob, { contentType: blob.type || file.type || "image/jpeg", upsert: false });
     if (up.error) { toast("No se pudo subir el comprobante. Revisa tu conexión e inténtalo otra vez.", "err"); return; }
-    const { error } = await supabase.rpc("cliente_subir_comprobante", { p_pedido: pedido, p_ruta: ruta, p_monto: monto === "" ? null : Number(monto) });
+    const { data: res, error } = await supabase.rpc("cliente_subir_comprobante", { p_pedido: pedido, p_ruta: ruta, p_monto: monto === "" ? null : Number(monto) });
     if (error) { await supabase.storage.from(BUCKET_COMPROBANTES).remove([ruta]); toast(mensajeError(error), "err"); return; }
-    toast("¡Listo! Recibimos tu comprobante. Te avisamos cuando verifiquemos el pago.");
+    if (res?.perdidos > 0) toast(res.apartados ? `Recibimos tu comprobante. ${res.perdidos === 1 ? "Un par lo pagó" : `${res.perdidos} pares los pagó`} otra persona antes; te contactaremos por la diferencia.` : "Recibimos tu comprobante, pero otra persona pagó antes esos pares. Te contactaremos para devolverte tu dinero.", "err");
+    else toast("¡Listo! Tus pares quedaron apartados. Te avisamos cuando verifiquemos el pago.");
     setFile(null);
     onListo();
   });
@@ -568,7 +569,7 @@ function SubirComprobante({ pedido, total, toast, onListo }) {
   );
 }
 
-function MisPedidos({ onVolver, toast, recargarCatalogo }) {
+function MisPedidos({ onVolver, toast, recargarCatalogo, cfg, destacar = "" }) {
   const [lista, setLista] = useState(null);
   const [qrAbierto, setQrAbierto] = useState(null);
   const [err, setErr] = useState("");
@@ -585,12 +586,13 @@ function MisPedidos({ onVolver, toast, recargarCatalogo }) {
     return [...o.entries()];
   }, [lista]);
   const cancelar = (x) => run(async () => {
-    if (!confirm(`¿Cancelar ${x.par.marca} ${x.par.modelo}? El par vuelve al catálogo y otra persona podrá pedirlo.`)) return;
+    if (!confirm(`¿Quitar ${x.par.marca} ${x.par.modelo} de tu pedido?`)) return;
     const { error } = await supabase.rpc("cliente_cancelar", { p_reserva: x.reserva });
     if (error) { toast(mensajeError(error), "err"); return; }
-    toast("Listo, cancelamos ese par.");
+    toast("Listo, lo quitamos de tu pedido.");
     await cargar(); recargarCatalogo();
   });
+  const subido = async () => { await cargar(); recargarCatalogo(); };
   return (
     <main className="max-w-3xl mx-auto px-3 sm:px-6 py-6 pb-28">
       <div className="flex items-center justify-between mb-4">
@@ -608,18 +610,19 @@ function MisPedidos({ onVolver, toast, recargarCatalogo }) {
         <div className="space-y-4">
           {grupos.map(([k, items]) => {
             const est = estadoPedido(items);
-            const { v, comp, activas } = est;
+            const { v, comp, porPagar, libres, apartados } = est;
             const saldo = v ? Math.max(0, Number(v.total) - Number(v.pagado)) : 0;
-            const porPagar = activas.reduce((a, x) => a + Number(x.par.precio || 0), 0);
-            const enRevision = comp?.estado === "En revisión" && activas.length > 0;
+            const porCobrar = libres.reduce((a, x) => a + Number(x.par.precio || 0), 0);
+            const enRevision = comp?.estado === "En revisión" && apartados.length > 0;
+            const rechazado = est.cancelado && comp?.estado === "Rechazado";
             return (
-              <section key={k} className="bg-white rounded-xl border border-slate-200 overflow-hidden">
+              <section key={k} ref={(el) => { if (el && k === destacar) setTimeout(() => el.scrollIntoView({ block: "start" }), 50); }} className={`bg-white rounded-xl border overflow-hidden ${k === destacar ? "border-purple-400 ring-2 ring-purple-200" : "border-slate-200"}`}>
                 <div className="px-4 py-3 border-b border-slate-100 flex flex-wrap items-center justify-between gap-2">
                   <div><div className="text-sm font-semibold text-slate-900">Pedido {k}</div><div className="text-xs text-slate-500">{fdate(items[0].creado)}</div></div>
                   <div className="text-xs text-slate-600 flex items-center gap-1"><MapPin size={12} />{textoEntrega(est.envio)}</div>
                 </div>
                 {est.cancelado ? (
-                  <div className="px-4 py-2.5 text-sm text-slate-600 bg-slate-50 flex items-center gap-2"><Pill tone="Cancelada">Cancelado</Pill>{items[0].obs && <span className="text-xs">{items[0].obs}</span>}</div>
+                  <div className="px-4 py-2.5 text-sm text-slate-600 bg-slate-50 flex items-center gap-2"><Pill tone="Cancelada">Cancelado</Pill>{!rechazado && items[0].obs && <span className="text-xs">{items[0].obs}</span>}</div>
                 ) : <Seguimiento est={est} />}
                 {v && (v.fecha_envio || v.guia) && (
                   <div className="mx-4 mb-3 rounded-lg bg-cyan-50 px-3 py-2 text-sm text-cyan-900 flex flex-wrap gap-x-4 gap-y-0.5">
@@ -628,37 +631,43 @@ function MisPedidos({ onVolver, toast, recargarCatalogo }) {
                   </div>
                 )}
                 <div className="divide-y divide-slate-100 border-t border-slate-100">
-                  {items.map((x) => (
-                    <div key={x.reserva} className="flex items-center gap-3 p-3">
-                      <div className="w-14 h-14 rounded-lg overflow-hidden vx-photo shrink-0">
-                        <ProductPhoto p={{ codigo: x.par.codigo, marca: x.par.marca, modelo: x.par.modelo, hex: colorHex(x.par.color), photos: x.par.foto ? [{ id: x.par.foto, url: fotoUrl(x.par.foto) }] : [] }} />
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <div className={`text-sm font-semibold truncate ${x.estado === "Cancelada" ? "text-slate-400 line-through" : ""}`}>{x.par.marca} {x.par.modelo}</div>
-                        <div className="text-xs text-slate-500">Talla {String(x.par.talla).replace(".", ",")}{x.par.cm ? ` · ${fcm(x.par.cm)}` : ""} · {bs0(x.par.precio)}</div>
-                      </div>
-                      {x.estado === "Activa" && !enRevision && <Btn size="sm" variant="ghost" disabled={busy} onClick={() => cancelar(x)}>Cancelar</Btn>}
-                    </div>))}
+                  {items.map((x) => {
+                    const vendido = x.estado === "Por pagar" && !x.disponible;
+                    return (
+                      <div key={x.reserva} className="flex items-center gap-3 p-3">
+                        <div className={`w-14 h-14 rounded-lg overflow-hidden vx-photo shrink-0 ${x.estado === "Cancelada" || vendido ? "opacity-50" : ""}`}>
+                          <ProductPhoto p={{ codigo: x.par.codigo, marca: x.par.marca, modelo: x.par.modelo, hex: colorHex(x.par.color), photos: x.par.foto ? [{ id: x.par.foto, url: fotoUrl(x.par.foto) }] : [] }} />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-sm font-semibold truncate ${x.estado === "Cancelada" || vendido ? "text-slate-400 line-through" : ""}`}>{x.par.marca} {x.par.modelo}</div>
+                          <div className="text-xs text-slate-500">Talla {String(x.par.talla).replace(".", ",")}{x.par.cm ? ` · ${fcm(x.par.cm)}` : ""} · {bs0(x.par.precio)}</div>
+                          {vendido && <div className="text-xs text-rose-600 font-medium">Ya lo compró otra persona. No lo pagues.</div>}
+                          {x.estado === "Cancelada" && x.obs && !rechazado && !est.cancelado && <div className="text-xs text-rose-600">{x.obs}</div>}
+                        </div>
+                        {x.estado === "Por pagar" && <Btn size="sm" variant="ghost" disabled={busy} onClick={() => cancelar(x)}>Quitar</Btn>}
+                      </div>);
+                  })}
                 </div>
                 {v && v.estado !== "Anulada" && (
                   <div className="px-4 py-3 bg-slate-50 text-sm vx-num flex flex-wrap gap-x-6 gap-y-1">
                     <span>Total <b>{bs0(v.total)}</b></span><span>Pagado <b className="text-cyan-700">{bs0(v.pagado)}</b></span>{saldo > 0 && <span>Falta pagar <b className="text-rose-600">{bs0(saldo)}</b></span>}
                   </div>
                 )}
-                {activas.length > 0 && (
-                  <div className="px-4 py-3 border-t border-slate-100 space-y-3">
-                    {enRevision ? (
-                      <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-900 flex gap-2"><Clock size={16} className="shrink-0 mt-0.5" /><span><b>Comprobante en revisión.</b> Estamos verificando tu pago{comp.monto ? ` de ${bs0(comp.monto)}` : ""}. Tus pares siguen apartados.</span></div>
-                    ) : (
-                      <>
-                        {comp?.estado === "Rechazado" && <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2.5 text-sm text-rose-800 flex gap-2"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><span><b>No pudimos aprobar tu comprobante:</b> {comp.motivo}. Sube otro, por favor.</span></div>}
-                        <p className="text-xs text-slate-600 flex items-center gap-1"><Clock size={12} /> Paga y sube tu comprobante antes del {ftime(est.vence)}, o los pares vuelven al catálogo.</p>
-                        <PagosQr items={activas} onAbrir={setQrAbierto} />
-                        <SubirComprobante pedido={k} total={porPagar} toast={toast} onListo={cargar} />
-                      </>
-                    )}
-                  </div>
-                )}
+                <div className="px-4 py-3 border-t border-slate-100 space-y-3 empty:hidden">
+                  {enRevision && <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-900 flex gap-2"><Clock size={16} className="shrink-0 mt-0.5" /><span><b>Comprobante en revisión.</b> Estamos verificando tu pago{comp.monto ? ` de ${bs0(comp.monto)}` : ""}. Tus pares ya están apartados para ti.</span></div>}
+                  {rechazado && <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2.5 text-sm text-rose-800 flex gap-2"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><span><b>No pudimos aprobar tu pago:</b> {comp.motivo}. Los pares volvieron al catálogo.</span></div>}
+                  {v && comp?.estado === "Aprobado" && <div className="rounded-xl bg-cyan-50 border border-cyan-200 px-3 py-2.5 text-sm text-cyan-900 flex gap-2"><CheckCircle2 size={16} className="shrink-0 mt-0.5" /><span><b>¡Pago aprobado!</b> Tu compra está confirmada. Aquí verás cada paso de tu envío.</span></div>}
+                  {(enRevision || rechazado || (v && comp)) && <Contacto cfg={cfg} pedido={k} texto={rechazado ? "Escríbenos" : "¿Dudas sobre tu pedido? Escríbenos"} />}
+                  {porPagar.length > 0 && !enRevision && (libres.length ? (
+                    <>
+                      <p className="text-xs text-slate-600 flex items-start gap-1"><AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-600" /> Los pares no están apartados: se los lleva quien pague primero. Paga y sube tu comprobante cuanto antes (este pedido se cancela el {ftime(est.vence)}).</p>
+                      <PagosQr items={libres} onAbrir={setQrAbierto} />
+                      <SubirComprobante pedido={k} total={porCobrar} toast={toast} onListo={subido} />
+                    </>
+                  ) : (
+                    <p className="text-sm text-rose-700">Los pares de este pedido ya los compró otra persona. Quítalos y elige otros en el catálogo.</p>
+                  ))}
+                </div>
               </section>
             );
           })}

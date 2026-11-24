@@ -132,7 +132,7 @@ function Sistema({ perfil }) {
       const nuevo = await cargarTodo(rol === "admin");
       tick();
       // Aviso cuando llega un pedido nuevo de la tienda en línea
-      const ahora = new Set(nuevo.reservations.filter((r) => r.web && r.estado === "Activa").map((r) => r.pedidoWeb));
+      const ahora = new Set(nuevo.reservations.filter((r) => r.web && (r.estado === "Activa" || r.estado === "Por pagar")).map((r) => r.pedidoWeb));
       if (pedidosWeb.current) {
         const nuevos = [...ahora].filter((x) => !pedidosWeb.current.has(x));
         if (nuevos.length) {
