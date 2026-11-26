@@ -310,6 +310,7 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
   };
   const [porRecortar, setPorRecortar] = useState([]);
   const [recortar, setRecortar] = useState(false);
+  const [ajustarTodas, setAjustarTodas] = useState(false);
   const onFiles = (files) => { if (files.length) setPorRecortar(files); };
   const subirRecortadas = (files) => {
     setPorRecortar([]);
@@ -336,9 +337,6 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
                 <button className="absolute top-2 right-2 p-1.5 rounded-lg bg-white text-rose-600 shadow" aria-label="Eliminar esta foto" disabled={busy}
                   onClick={() => { if (confirm("¿Eliminar esta foto?")) run(async () => { await actions.deletePhoto(p.photos[cur], p.codigo); setPhoto(0); }); }}><Trash2 size={15} /></button>
               )}
-              {can.inv && p.photos[cur] && (
-                <button className="absolute top-12 right-2 p-1.5 rounded-lg bg-white text-slate-700 shadow" aria-label="Recortar esta foto" title="Recortar" disabled={busy} onClick={() => setRecortar(true)}><Crop size={15} /></button>
-              )}
               {can.inv && p.photos.length > 1 && (
                 <div className="absolute bottom-2 inset-x-2 flex items-center justify-between gap-2">
                   <button disabled={busy || cur === 0} onClick={() => mover(cur, cur - 1)} className="p-2 rounded-lg bg-white shadow text-slate-700 disabled:opacity-30" aria-label="Mover foto a la izquierda"><ArrowLeft size={15} /></button>
@@ -357,9 +355,16 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
               ))}
               {can.inv && <PhotoPicker compact disabled={busy} onFiles={onFiles} />}
             </div>
+            {can.inv && p.photos.length > 0 && (
+              <div className="flex gap-2 mt-2">
+                <Btn size="sm" variant="outline" className="flex-1" disabled={busy} onClick={() => setRecortar(true)}><Crop size={14} /> Ajustar tamaño{p.photos.length > 1 ? " de esta foto" : ""}</Btn>
+                {p.photos.length > 1 && <Btn size="sm" variant="outline" className="flex-1" disabled={busy} onClick={() => setAjustarTodas(true)}><Crop size={14} /> Ajustar todas ({p.photos.length})</Btn>}
+              </div>
+            )}
             {visor && <PhotoViewer urls={p.photos.map((f) => f.url)} start={cur} title={`${p.codigo} · ${p.marca} ${p.modelo}`} onClose={() => setVisor(false)} />}
             {porRecortar.length > 0 && <RecortarVarias files={porRecortar} onTerminar={subirRecortadas} onCancelar={() => setPorRecortar([])} />}
             {recortar && p.photos[cur] && <CropModal url={p.photos[cur].url} titulo="Recortar foto" onClose={() => setRecortar(false)} onDone={(f) => { setRecortar(false); const ph = p.photos[cur]; run(() => actions.replacePhoto(p.id, ph, f, p.codigo)); }} />}
+            {ajustarTodas && <AjustarFotosSubidas photos={p.photos} onTerminar={(cambios) => { setAjustarTodas(false); if (cambios.length) run(() => actions.replacePhotos(p.id, cambios, p.codigo)); }} />}
           </div>
           {(p.videos.length > 0 || can.inv) && p.estado !== "Eliminado" && <VideosDelPar p={p} actions={actions} can={can} />}
           {p.estado !== "Eliminado" && (
@@ -483,6 +488,7 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
             </div>
           )}
           <p className="text-xs text-slate-400 mt-1">Hasta 8 fotos. La del borde amarillo es la portada; toca la estrella de otra para cambiarla.</p>
+          {edit && edit.fotos > 0 && <p className="text-xs text-slate-500 mt-1">Para cambiar el tamaño de las {edit.fotos} foto{edit.fotos === 1 ? "" : "s"} que ya tiene este par, abre su ficha y toca <b>Ajustar tamaño</b> o <b>Ajustar todas</b>.</p>}
           <div className="mt-3 pt-3 border-t border-slate-100">
             <div className="text-xs font-semibold text-slate-700 mb-1.5">Videos (opcional)</div>
             <div className="flex gap-2"><VideoPicker disabled={busy || vids.length >= 3} onFiles={(nv) => setVids([...vids, ...nv].slice(0, 3))} /></div>
@@ -743,5 +749,19 @@ function VideosDelPar({ p, actions, can }) {
       {busy && <div className="mt-2 text-xs text-slate-600 flex items-center gap-2"><Spinner /> {estado || "Trabajando…"}</div>}
       {ver && <VideoPlayer url={ver.url} title={`${p.codigo} · ${p.marca} ${p.modelo}`} onClose={() => setVer(null)} />}
     </div>
+  );
+}
+
+// Ajustar, una por una, todas las fotos ya subidas de un par.
+// "Usar sin recortar" deja esa foto como está; cerrar guarda las que ya ajustaste.
+function AjustarFotosSubidas({ photos, onTerminar }) {
+  const [n, setN] = useState(0);
+  const cambios = useRef([]);
+  const siguiente = () => { if (n + 1 >= photos.length) onTerminar(cambios.current); else setN(n + 1); };
+  return (
+    <CropModal key={photos[n].id} url={photos[n].url} titulo="Ajustar foto" paso={`Foto ${n + 1} de ${photos.length}${n === 0 ? " · portada" : ""}`}
+      onDone={(f) => { cambios.current = [...cambios.current, { photo: photos[n], file: f }]; siguiente(); }}
+      onSkip={siguiente}
+      onClose={() => onTerminar(cambios.current)} />
   );
 }

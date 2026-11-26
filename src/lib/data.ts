@@ -369,17 +369,25 @@ export function crearAcciones({ db, me, recargar, toast }) {
       await recargar();
       return true;
     },
-    // Cambiar una foto ya subida por su versión recortada (mantiene su lugar y la portada)
+    // Cambiar fotos ya subidas por su versión ajustada (cada una mantiene su lugar y la portada sigue igual)
+    async replacePhotos(productId, cambios, codigo) {
+      let n = 0;
+      for (const { photo, file } of cambios) {
+        const ruta = `${productId}/${Date.now()}-${n}-r.jpg`;
+        const up = await supabase.storage.from(BUCKET).upload(ruta, file, { contentType: "image/jpeg", upsert: false });
+        if (up.error) { fallo(up.error); break; }
+        const ins = await supabase.from("producto_fotos").insert({ producto_id: productId, ruta, orden: photo.orden ?? 0 });
+        if (ins.error) { await supabase.storage.from(BUCKET).remove([ruta]); fallo(ins.error); break; }
+        await supabase.from("producto_fotos").delete().eq("id", photo.id);
+        await supabase.storage.from(BUCKET).remove([photo.ruta]);
+        n++;
+      }
+      if (n) { auditar("Ajustó fotos", codigo, `${n} foto(s)`); toast(n === 1 ? "Foto ajustada." : `${n} fotos ajustadas.`); }
+      await recargar();
+      return n > 0;
+    },
     async replacePhoto(productId, photo, file, codigo) {
-      const ruta = `${productId}/${Date.now()}-r.jpg`;
-      const up = await supabase.storage.from(BUCKET).upload(ruta, file, { contentType: "image/jpeg", upsert: false });
-      if (up.error) return fallo(up.error);
-      const ins = await supabase.from("producto_fotos").insert({ producto_id: productId, ruta, orden: photo.orden ?? 0 });
-      if (ins.error) { await supabase.storage.from(BUCKET).remove([ruta]); return fallo(ins.error); }
-      await supabase.from("producto_fotos").delete().eq("id", photo.id);
-      await supabase.storage.from(BUCKET).remove([photo.ruta]);
-      auditar("Recortó foto", codigo, "");
-      toast("Foto ajustada."); await recargar(); return true;
+      return this.replacePhotos(productId, [{ photo, file }], codigo);
     },
     async deletePhoto(photo, codigo) {
       const del = await supabase.from("producto_fotos").delete().eq("id", photo.id);

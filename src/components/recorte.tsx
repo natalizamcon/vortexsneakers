@@ -47,7 +47,8 @@ export function CropModal({ file = null, url = "", titulo = "Ajustar foto", paso
     let vivo = true, temporal = "";
     (async () => {
       try {
-        const base = file ? (temporal = URL.createObjectURL(file)) : url;
+        // Foto ya subida: se pide de nuevo (sin la copia guardada del navegador) para poder editarla
+        const base = file ? (temporal = URL.createObjectURL(file)) : url + (url.includes("?") ? "&" : "?") + "vx=" + Date.now();
         const img = await abrirImagen(base);
         let final = base, w = img.naturalWidth, h = img.naturalHeight;
         if (giro) {

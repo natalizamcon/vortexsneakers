@@ -170,4 +170,4 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 ## Botón atrás y fotos
 
 - En el celular, el botón **atrás** cierra la ventana abierta o vuelve a la página anterior; en la página de inicio hay que presionarlo dos veces seguidas para salir.
-- Al subir fotos se abre **Ajustar foto**: elige la forma (cuadrada, vertical, horizontal u original), acerca con los dedos o la barra, mueve la foto dentro del marco y gírala. También puedes recortar una foto ya subida desde la ficha del par.
+- Al subir fotos se abre **Ajustar foto**: elige la forma (cuadrada, vertical, horizontal u original), acerca con los dedos o la barra, mueve la foto dentro del marco y gírala. Para las fotos **ya subidas**, abre la ficha del par y toca **Ajustar tamaño de esta foto** o **Ajustar todas** (te las muestra una por una; “Usar sin recortar” deja esa como está).
