@@ -4,6 +4,7 @@ import {
   LogOut, Clock, CheckCircle2, AlertTriangle, History, Layers, CalendarDays, MoreHorizontal, KeyRound, WifiOff, Eye, QrCode,
 } from "lucide-react";
 import { supabase, configurado, mensajeError } from "./lib/supabase";
+import { iniciarAtras, fijarAvisoSalir, cambiarUrl, useAtras, usePaginaAtras } from "./lib/atras";
 import { cargarTodo, crearAcciones, DB_VACIA } from "./lib/data";
 import { computeMetrics, agendaEvents, reminderState, TIPOS_EVENTO, TODAY, fechaLarga, tick, ACCESO, permisos, ROLES } from "./lib/utils";
 import { Logo, Btn } from "./components/ui";
@@ -43,6 +44,7 @@ export default function App() {
  *  • cliente con cuenta → la tienda con su cuenta y sus pedidos
  */
 function Sesion() {
+  useEffect(() => { iniciarAtras(); }, []);
   const [session, setSession] = useState(undefined);
   const [perfil, setPerfil] = useState(undefined);
   const [cuenta, setCuenta] = useState(undefined);
@@ -191,16 +193,25 @@ function Sistema({ perfil }) {
     };
   }, []);
 
-  // Navegación con el botón "atrás" del navegador o del celular
-  useEffect(() => {
-    const onPop = () => { setPath(window.location.pathname); setModal(null); setDrawer(null); };
-    window.addEventListener("popstate", onPop);
-    return () => window.removeEventListener("popstate", onPop);
-  }, []);
+  // Botón "atrás" del celular: cierra lo que esté abierto o vuelve a la página anterior (no sale de la app)
+  const paginasVisitadas = useRef([]);
+  useEffect(() => { fijarAvisoSalir((t) => toast(t)); }, [toast, vistaCliente]);
+  useAtras(navOpen, () => setNavOpen(false));
+  useAtras(bellOpen, () => setBellOpen(false));
+  useAtras(drawer, () => setDrawer(null));
+  usePaginaAtras(() => {
+    if (vistaCliente) { setVistaCliente(false); return true; }
+    const anterior = paginasVisitadas.current.pop();
+    const inicioRuta = RUTAS[inicio] || "/";
+    const destino = anterior || (path !== inicioRuta ? inicioRuta : null);
+    if (!destino) return false;
+    cambiarUrl(destino); setPath(destino); window.scrollTo(0, 0);
+    return true;
+  });
 
   const go = (key) => {
     const ruta = RUTAS[key] || "/";
-    if (ruta !== window.location.pathname) window.history.pushState({}, "", ruta);
+    if (ruta !== path) { paginasVisitadas.current = [...paginasVisitadas.current.filter((r) => r !== path), path].slice(-15); cambiarUrl(ruta); }
     setPath(ruta);
     setNavOpen(false);
     window.scrollTo(0, 0);

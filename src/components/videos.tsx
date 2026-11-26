@@ -1,6 +1,7 @@
 // Videos de los pares: grabar dentro de la app, subir desde la galería,
 // reducir el tamaño automáticamente y reproducir en pantalla completa.
 import { useState, useEffect, useRef } from "react";
+import { useAtras } from "../lib/atras";
 import { Video, Film, X, RefreshCw, Check, Play, Square, Volume2, VolumeX, RotateCcw } from "lucide-react";
 
 export const MAX_MB = 48;              // Supabase gratis acepta hasta 50 MB por archivo
@@ -141,6 +142,7 @@ export function VideoPicker({ onFiles, disabled = false, compact = false }) {
 
 /** Grabadora de video dentro de la app */
 export function VideoRecorderModal({ onClose, onDone, onFallback }) {
+  useAtras(true, () => { try { recRef.current?.state !== "inactive" && recRef.current?.stop(); } catch {} onClose(); });
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const recRef = useRef(null);
@@ -266,6 +268,7 @@ export function VideoThumb({ v, onClick, className = "", children = null }) {
 
 /** Reproducir un video en pantalla completa */
 export function VideoPlayer({ url, title = "", onClose }) {
+  useAtras(true, onClose);
   useEffect(() => {
     const k = (e) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", k);

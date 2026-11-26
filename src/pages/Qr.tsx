@@ -119,6 +119,21 @@ function ElegirPares({ db, qr, monto, seleccion, setSeleccion }) {
 export function QrManagerModal({ db, actions, onClose, toast }) {
   const [ver, setVer] = useState(null);
   const [modo, setModo] = useState(db.qrs.length ? "lista" : "nuevo");
+  const [montoNuevo, setMontoNuevo] = useState("");
+  const hayLibre = db.qrs.some((q) => q.monto == null);
+  // Totales de pedidos de varios pares que hoy no tienen un QR con ese monto
+  const totalesSinQr = useMemo(() => {
+    if (hayLibre) return [];
+    const g = new Map();
+    db.reservations.filter((r) => r.web && r.estado === "Por pagar").forEach((r) => {
+      const p = db.products.find((x) => x.id === r.productId);
+      if (!p || p.estado !== "Disponible") return;
+      const a = g.get(r.pedidoWeb) || { n: 0, total: 0 };
+      g.set(r.pedidoWeb, { n: a.n + 1, total: a.total + Number(p.precio) });
+    });
+    const montos = new Set(db.qrs.map((q) => Number(q.monto)));
+    return [...new Set([...g.values()].filter((x) => x.n > 1 && !montos.has(x.total)).map((x) => x.total))].sort((a, b) => a - b);
+  }, [db.reservations, db.products, db.qrs, hayLibre]);
   const [editar, setEditar] = useState(null); // { qr, nombre, monto }
   const [asignar, setAsignar] = useState(null); // qr
   const [seleccion, setSeleccion] = useState(new Set());
@@ -149,21 +164,31 @@ export function QrManagerModal({ db, actions, onClose, toast }) {
 
   return (
     <Modal wide title="QR de pago" onClose={onClose} footer={<Btn variant="ghost" onClick={onClose}>Cerrar</Btn>}>
-      <p className="text-sm text-slate-600">Sube el QR de tu banco una vez y asígnalo a todos los pares que tienen ese precio. El cliente lo ve en “Mis pedidos” cuando aparta el par, y ustedes pueden compartirlo desde la ficha de cada par.</p>
+      <p className="text-sm text-slate-600">Sube el QR de tu banco una vez: los pares de ese precio lo reciben solos, también los que agregues después. El cliente lo ve en “Mis pedidos” al comprar.</p>
+      <Note>
+        <b>Compras de varios pares:</b> la tienda muestra un QR por el <b>total</b> del pedido. Para eso sube aquí un <b>QR de monto libre</b> (sin monto: el cliente escribe el total en su banco) — es lo más práctico —, o QR con montos exactos de totales (ej.: Bs 360 para dos pares de 180).
+        {!hayLibre && <span className="block mt-1">Todavía no tienes un QR de monto libre.</span>}
+      </Note>
+      {totalesSinQr.length > 0 && (
+        <div className="rounded-xl border border-amber-200 bg-amber-50 p-3">
+          <div className="text-xs font-semibold text-amber-900">Clientes esperando pagar estos totales y no hay un QR para ellos:</div>
+          <div className="flex flex-wrap gap-1.5 mt-2">{totalesSinQr.map((t) => <button key={t} onClick={() => { setMontoNuevo(String(t)); setModo("nuevo"); }} className="text-xs font-semibold rounded-full bg-white border border-amber-300 px-2.5 py-1 hover:bg-amber-100">Subir QR de {bs0(t)}</button>)}</div>
+        </div>
+      )}
       {modo === "nuevo" ? (
-        <NuevoQr busy={busy} onCancel={() => setModo("lista")} onGuardar={({ file, monto, nombre }) => run(async () => {
+        <NuevoQr key={montoNuevo} montoInicial={montoNuevo} busy={busy} onCancel={() => { setModo("lista"); setMontoNuevo(""); }} onGuardar={({ file, monto, nombre }) => run(async () => {
           const id = await actions.createQR(file, nombre, monto, []);
           if (id) {
             setModo("lista");
             // Al terminar de subirlo, se abre para elegir los pares (ya marcados los del mismo precio)
             const qr = { id, nombre: nombre || (monto ? `QR Bs ${Number(monto)}` : "QR monto libre"), monto: monto ? Number(monto) : null, url: "" };
-            const mismos = monto ? db.products.filter((p) => (p.estado === "Disponible" || p.estado === "Reservado") && Number(p.precio) === Number(monto) && !p.qrId).map((p) => p.id) : [];
+            const mismos = monto ? db.products.filter((p) => (p.estado === "Disponible" || p.estado === "Reservado") && Number(p.precio) === Number(monto) && (!p.qrId || db.qrs.find((q) => q.id === p.qrId)?.monto == null)).map((p) => p.id) : [];
             setSeleccion(new Set(mismos));
             setAsignar(qr);
           }
         })} />
       ) : (
-        <Btn variant="outline" className="w-full" onClick={() => setModo("nuevo")}><Plus size={15} /> Subir un QR nuevo</Btn>
+        <div className="flex flex-col sm:flex-row gap-2"><Btn variant="outline" className="flex-1" onClick={() => { setMontoNuevo(""); setModo("nuevo"); }}><Plus size={15} /> Subir un QR nuevo</Btn></div>
       )}
       <div className="space-y-2">
         {db.qrs.map((q) => {

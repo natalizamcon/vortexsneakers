@@ -135,6 +135,8 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 ## QR de pago
 
 - En **Inventario → QR de pago** subes la imagen del QR de tu banco (desde la galería o con la cámara) y escribes su monto, por ejemplo Bs 180. Si el QR es de monto libre, deja el monto vacío.
+- **QR automático:** cada par nuevo recibe solo el QR de su mismo precio; si no hay, el de monto libre. Si cambias el precio, cambia también su QR.
+- **Compras de varios pares:** el cliente ve **Pagar todo con un QR** por el total. Se usa un QR con ese monto exacto o, si no hay, el de monto libre (el cliente escribe el total en su banco). Lo más práctico es subir un **QR de monto libre**.
 - Al guardarlo se abre la lista de pares **ya marcados los que tienen ese mismo precio**: revisa y toca **Guardar**. Un mismo QR sirve para todos los pares que quieras.
 - También puedes tocar **Seleccionar varios** en el inventario, marcar los pares y tocar **Asignar QR**.
 - En la ficha de cada par ves su QR y puedes **Compartir** o **Cambiar**. Si el monto del QR no coincide con el precio del par, aparece un aviso.
@@ -149,7 +151,7 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 4. **Aprobar pago**: escribes cuánto llegó y la fecha en que lo envías o lo dejas en la paquetería. Se registra la venta pagada, los pares pasan al historial y **la foto del comprobante se borra**.
 5. **Rechazar**: escribes el motivo; el pedido se cancela y **los pares vuelven al catálogo**.
 6. El cliente ve el seguimiento: Pedido recibido → Pago → Preparando → Enviado (o En la paquetería) → Entregado, y su WhatsApp de contacto.
-- En **Configuración → Tienda en línea** escribe el **WhatsApp de contacto** y los datos de la **paquetería en Cochabamba**.
+- En **Configuración → Tienda en línea** está el **WhatsApp de contacto** (62035357) y los datos de la **paquetería en Cochabamba**.
 - Los comprobantes se guardan en una carpeta **privada** llamada `comprobantes`.
 
 ## Videos de los pares
@@ -158,3 +160,14 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 - **Grabar video** abre la cámara dentro de la app (hasta 1 minuto). Puedes cambiar de cámara, activar el sonido, revisar el video y repetirlo antes de usarlo.
 - **Subir video** toma uno de tu galería. Si pesa más de 48 MB, la app lo hace más liviano antes de subirlo (tarda lo mismo que dura el video y queda sin sonido). Videos de hasta 3 minutos.
 - Los clientes ven los videos en la tienda: en el catálogo aparece la etiqueta **Video** y en el detalle del par el botón **Ver video**.
+
+## Tienda: Lo compro y carrito
+
+- Cada par tiene dos botones: **Lo compro** (compra solo ese par, directo) y **Añadir al carrito** (para juntar varios y comprarlos juntos).
+- Al comprar se muestra el WhatsApp de contacto por si el cliente tiene dudas.
+- Envíos: **paquetería en Cochabamba** o **encomienda a otro departamento de Bolivia** (no al extranjero).
+
+## Botón atrás y fotos
+
+- En el celular, el botón **atrás** cierra la ventana abierta o vuelve a la página anterior; en la página de inicio hay que presionarlo dos veces seguidas para salir.
+- Al subir fotos se abre **Ajustar foto**: elige la forma (cuadrada, vertical, horizontal u original), acerca con los dedos o la barra, mueve la foto dentro del marco y gírala. También puedes recortar una foto ya subida desde la ficha del par.

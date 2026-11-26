@@ -1,9 +1,10 @@
 import { useState, useMemo, useEffect, useRef } from "react";
-import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn, Gift, QrCode, CheckSquare, Play, Video } from "lucide-react";
+import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn, Gift, QrCode, CheckSquare, Play, Video, Crop } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm, itemLista } from "../lib/utils";
 import { FORMATOS, ENCUADRE_INICIAL, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
 import { PhotoPicker, PhotoViewer } from "../components/photos";
+import { CropModal, RecortarVarias } from "../components/recorte";
 import { VideoPicker, VideoThumb, VideoPlayer } from "../components/videos";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
 
@@ -13,7 +14,7 @@ export function ProductCard({ p, onClick, children, selected = undefined, onZoom
   return (
     <div className={`relative bg-white rounded-xl border overflow-hidden transition-colors flex flex-col ${selected ? "border-purple-600 ring-2 ring-purple-600" : "border-slate-200 hover:border-cyan-400"}`}>
       <button onClick={onClick} className="text-left flex-1" aria-pressed={selecting ? selected : undefined}>
-        <div className="relative aspect-video vx-photo overflow-hidden">
+        <div className="relative aspect-square vx-photo overflow-hidden">
           <ProductPhoto p={p} />
           {selecting && (
             <span className={`absolute bottom-2 left-2 w-6 h-6 rounded-full grid place-items-center border-2 ${selected ? "bg-purple-700 border-purple-700 text-white" : "bg-white border-slate-300"}`} aria-hidden="true">
@@ -35,7 +36,7 @@ export function ProductCard({ p, onClick, children, selected = undefined, onZoom
         </div>
       </button>
       {verFotos && (
-        <div className="absolute inset-x-0 top-0 aspect-video pointer-events-none">
+        <div className="absolute inset-x-0 top-0 aspect-square pointer-events-none">
           <button onClick={onZoom} className="pointer-events-auto absolute bottom-2 right-2 flex items-center gap-1 text-xs font-semibold text-slate-800 bg-white rounded-md px-2 py-1 shadow" aria-label={`Ver las fotos de ${p.codigo} completas`}>
             <ZoomIn size={13} /> Ver {p.photos.length > 1 ? `${p.photos.length} fotos` : "foto"}
           </button>
@@ -307,7 +308,11 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
     ids.splice(a, 0, x);
     run(async () => { if (await actions.reorderPhotos(p.id, ids, a === 0)) setPhoto(a); });
   };
-  const onFiles = (files) => {
+  const [porRecortar, setPorRecortar] = useState([]);
+  const [recortar, setRecortar] = useState(false);
+  const onFiles = (files) => { if (files.length) setPorRecortar(files); };
+  const subirRecortadas = (files) => {
+    setPorRecortar([]);
     if (files.length) run(async () => { await actions.addPhotos(p.id, files); setPhoto(p.photos.length); });
   };
   return (
@@ -322,7 +327,7 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
         </div>
         <div className="p-5 space-y-5">
           <div>
-            <div className="relative aspect-square sm:aspect-video rounded-xl vx-photo overflow-hidden">
+            <div className="relative aspect-square rounded-xl vx-photo overflow-hidden">
               <ProductPhoto p={p} idx={cur} fit="contain" />
               {p.photos[cur] && <button className="absolute inset-0 cursor-zoom-in" onClick={() => setVisor(true)} aria-label="Ver la foto completa en pantalla grande" />}
               {p.photos[cur] && <span className={`absolute top-2 ${can.inv ? "right-12" : "right-2"} pointer-events-none flex items-center gap-1 text-xs font-semibold bg-white text-slate-800 rounded-md px-2 py-1 shadow`}><ZoomIn size={13} /> Ampliar</span>}
@@ -330,6 +335,9 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
               {can.inv && p.photos[cur] && (
                 <button className="absolute top-2 right-2 p-1.5 rounded-lg bg-white text-rose-600 shadow" aria-label="Eliminar esta foto" disabled={busy}
                   onClick={() => { if (confirm("¿Eliminar esta foto?")) run(async () => { await actions.deletePhoto(p.photos[cur], p.codigo); setPhoto(0); }); }}><Trash2 size={15} /></button>
+              )}
+              {can.inv && p.photos[cur] && (
+                <button className="absolute top-12 right-2 p-1.5 rounded-lg bg-white text-slate-700 shadow" aria-label="Recortar esta foto" title="Recortar" disabled={busy} onClick={() => setRecortar(true)}><Crop size={15} /></button>
               )}
               {can.inv && p.photos.length > 1 && (
                 <div className="absolute bottom-2 inset-x-2 flex items-center justify-between gap-2">
@@ -350,6 +358,8 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
               {can.inv && <PhotoPicker compact disabled={busy} onFiles={onFiles} />}
             </div>
             {visor && <PhotoViewer urls={p.photos.map((f) => f.url)} start={cur} title={`${p.codigo} · ${p.marca} ${p.modelo}`} onClose={() => setVisor(false)} />}
+            {porRecortar.length > 0 && <RecortarVarias files={porRecortar} onTerminar={subirRecortadas} onCancelar={() => setPorRecortar([])} />}
+            {recortar && p.photos[cur] && <CropModal url={p.photos[cur].url} titulo="Recortar foto" onClose={() => setRecortar(false)} onDone={(f) => { setRecortar(false); const ph = p.photos[cur]; run(() => actions.replacePhoto(p.id, ph, f, p.codigo)); }} />}
           </div>
           {(p.videos.length > 0 || can.inv) && p.estado !== "Eliminado" && <VideosDelPar p={p} actions={actions} can={can} />}
           {p.estado !== "Eliminado" && (
@@ -420,6 +430,8 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
   const [estadoVideo, setEstadoVideo] = useState("");
   const [busy, run] = useBusy();
   const [visorNuevo, setVisorNuevo] = useState(null);
+  const [porRecortar, setPorRecortar] = useState([]);
+  const [recortarUno, setRecortarUno] = useState(null);
   const lot = db.lots.find((l) => l.id === p.lote);
   const cost = edit ? pCost(edit) : lot ? lotTotal(lot) / lot.pares : 0;
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
@@ -451,15 +463,18 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
             </div>
           )}
           <div className="flex gap-2 mt-2">
-            <PhotoPicker disabled={files.length >= 8} max={8 - files.length} onFiles={(nf) => setFiles([...files, ...nf].slice(0, 8))} />
+            <PhotoPicker disabled={files.length >= 8} max={8 - files.length} onFiles={(nf) => setPorRecortar(nf.slice(0, 8 - files.length))} />
           </div>
           {visorNuevo !== null && <PhotoViewer urls={previews} start={visorNuevo} title="Fotos del par nuevo" onClose={() => setVisorNuevo(null)} />}
+          {porRecortar.length > 0 && <RecortarVarias files={porRecortar} onTerminar={(fs) => { setPorRecortar([]); setFiles((a) => [...a, ...fs].slice(0, 8)); }} onCancelar={() => setPorRecortar([])} />}
+          {recortarUno !== null && files[recortarUno] && <CropModal file={files[recortarUno]} titulo="Recortar foto" onClose={() => setRecortarUno(null)} onDone={(f) => { setFiles(files.map((x, j) => (j === recortarUno ? f : x))); setRecortarUno(null); }} />}
           {previews.length > 0 && (
             <div className="flex flex-wrap gap-1.5 mt-2">
               {previews.map((u, i) => (
                 <div key={u} className={`relative w-14 h-14 rounded-md overflow-hidden border-2 ${i === 0 ? "border-amber-400" : "border-transparent"}`}>
                   <button type="button" className="w-full h-full" onClick={() => setVisorNuevo(i)} aria-label={`Ver foto ${i + 1}`}><img src={u} alt="" className="w-full h-full object-cover" /></button>
                   <button type="button" className="absolute top-0 right-0 bg-white rounded-bl p-0.5 text-rose-600" aria-label="Quitar foto" onClick={() => setFiles(files.filter((_, j) => j !== i))}><X size={12} /></button>
+                  <button type="button" className="absolute top-0 left-0 bg-white rounded-br p-0.5 text-slate-700" aria-label="Recortar foto" title="Recortar" onClick={() => setRecortarUno(i)}><Crop size={12} /></button>
                   {i === 0
                     ? <span className="absolute bottom-0 inset-x-0 bg-amber-400 text-slate-900 text-xs font-semibold text-center leading-4">Portada</span>
                     : <button type="button" className="absolute bottom-0 left-0 bg-white rounded-tr p-0.5" aria-label="Usar como portada" title="Usar como portada" onClick={() => portada(i)}><Star size={12} className="text-amber-500" /></button>}

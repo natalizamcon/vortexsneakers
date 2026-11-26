@@ -9,6 +9,7 @@ import { supabase, fotoUrl, mensajeError, comprimirImagen, BUCKET_COMPROBANTES }
 import { bs0, fcm, colorHex, norm, ftime, fdate, DEPARTAMENTOS } from "../lib/utils";
 import { Logo, Isotipo, Btn, Field, Input, Select, inputCls, Modal, PasswordInput, ProductPhoto, Spinner, Pill, useBusy } from "../components/ui";
 import { PhotoViewer } from "../components/photos";
+import { fijarAvisoSalir, usePaginaAtras } from "../lib/atras";
 import { VideoThumb, VideoPlayer } from "../components/videos";
 
 const BOLSA_KEY = "vx-bolsa";
@@ -18,7 +19,7 @@ const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } 
 // Solo dos formas de entrega, siempre por paquetería
 const ENTREGAS = [
   { k: "cochabamba", titulo: "Paquetería en Cochabamba", desc: "Lo dejamos en una paquetería de Cochabamba y lo recoges ahí.", icon: Package },
-  { k: "envio", titulo: "Envío a provincias u otro país", desc: "Lo enviamos por encomienda a tu ciudad, provincia o país.", icon: Truck },
+  { k: "envio", titulo: "Envío a otro departamento", desc: "Lo enviamos por encomienda a tu departamento, ciudad o provincia de Bolivia.", icon: Truck },
 ];
 const ZONAS = ["Cercado", "Sacaba", "Quillacollo", "Tiquipaya", "Colcapirhua", "Vinto", "Sipe Sipe", ...DEPARTAMENTOS];
 
@@ -35,7 +36,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   const llaveBolsa = vistaPrevia ? BOLSA_KEY + "-vista" : BOLSA_KEY;
   const [cat, setCat] = useState(null);
   const [error, setError] = useState("");
-  const [cfg, setCfg] = useState({ destinos: DEPARTAMENTOS, vigencia_horas: 48, whatsapp: "", paqueteria: "" });
+  const [cfg, setCfg] = useState({ destinos: DEPARTAMENTOS, vigencia_horas: 48, whatsapp: "62035357", paqueteria: "" });
   const [vista, setVista] = useState("catalogo");
   const [q, setQ] = useState("");
   const [talla, setTalla] = useState("");
@@ -45,6 +46,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   const [detalle, setDetalle] = useState(null);
   const [visor, setVisor] = useState(null);
   const [bolsaAbierta, setBolsaAbierta] = useState(false);
+  const [directo, setDirecto] = useState(null); // "Lo compro": comprar solo ese par
   const [auth, setAuth] = useState(null); // { modo, motivo }
   const [cuentaAbierta, setCuentaAbierta] = useState(false);
   const [destacar, setDestacar] = useState("");
@@ -55,6 +57,13 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
     setToasts((t) => [...t, { id, msg, tone }]);
     setTimeout(() => setToasts((t) => t.filter((x) => x.id !== id)), tone === "err" ? 6500 : 3800);
   }, []);
+  // Botón "atrás" del celular: vuelve al catálogo en vez de salir de la tienda
+  useEffect(() => { fijarAvisoSalir((t) => toast(t)); }, [toast]);
+  usePaginaAtras(() => {
+    if (vista !== "catalogo") { setVista("catalogo"); window.scrollTo(0, 0); return true; }
+    if (vistaPrevia) { onSalirVista(); return true; }
+    return false;
+  });
 
   const cargar = useCallback(async () => {
     const { data, error } = await supabase.rpc("catalogo_publico");
@@ -72,12 +81,15 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
 
   useEffect(() => {
     cargar();
-    supabase.rpc("tienda_config").then(({ data }) => { if (data) setCfg({ destinos: data.destinos?.length ? data.destinos : DEPARTAMENTOS, vigencia_horas: data.vigencia_horas || 48, whatsapp: data.whatsapp || "", paqueteria: data.paqueteria || "" }); });
+    supabase.rpc("tienda_config").then(({ data }) => { if (data) setCfg({ destinos: data.destinos?.length ? data.destinos : DEPARTAMENTOS, vigencia_horas: data.vigencia_horas || 48, whatsapp: data.whatsapp || "62035357", paqueteria: data.paqueteria || "" }); });
     const t = setInterval(cargar, 60000);
     const vis = () => { if (document.visibilityState === "visible") cargar(); };
     document.addEventListener("visibilitychange", vis);
     // Al volver de iniciar sesión para enviar el pedido, se abre la bolsa otra vez
-    try { if (!vistaPrevia && sessionStorage.getItem("vx-abrir-bolsa")) { sessionStorage.removeItem("vx-abrir-bolsa"); setBolsaAbierta(true); } } catch {}
+    try {
+      const v = !vistaPrevia && sessionStorage.getItem("vx-abrir-bolsa");
+      if (v) { sessionStorage.removeItem("vx-abrir-bolsa"); if (v.startsWith("d:")) setDirecto(v.slice(2)); else setBolsaAbierta(true); }
+    } catch {}
     return () => { clearInterval(t); document.removeEventListener("visibilitychange", vis); };
   }, [cargar]);
   useEffect(() => guardar(llaveBolsa, bolsa), [bolsa, llaveBolsa]);
@@ -101,6 +113,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
     if (bolsa.length >= 5) { toast("Puedes pedir hasta 5 pares a la vez.", "err"); return; }
     setBolsa([...bolsa, p.id]);
   };
+  const comprarYa = (p) => { setDetalle(null); setDirecto(p.id); };
   const salir = async () => { setCuentaAbierta(false); await supabase.auth.signOut(); };
   const pDetalle = detalle && (cat || []).find((p) => p.id === detalle);
 
@@ -122,8 +135,8 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
             {cuenta && (
               <button onClick={() => setVista(vista === "pedidos" ? "catalogo" : "pedidos")} className={`hidden sm:inline-flex px-3 py-2 rounded-lg text-sm font-medium ${vista === "pedidos" ? "bg-purple-50 text-purple-700" : "text-slate-600 hover:bg-slate-100"}`}>Mis pedidos</button>
             )}
-            <button onClick={() => setBolsaAbierta(true)} className="relative inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-slate-800 hover:bg-slate-100" aria-label={`Mi pedido, ${bolsa.length} pares`}>
-              <ShoppingBag size={19} /><span className="hidden sm:inline">Mi pedido</span>
+            <button onClick={() => setBolsaAbierta(true)} className="relative inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-semibold text-slate-800 hover:bg-slate-100" aria-label={`Mi carrito, ${bolsa.length} pares`}>
+              <ShoppingBag size={19} /><span className="hidden sm:inline">Mi carrito</span>
               {bolsa.length > 0 && <span className="absolute top-0.5 left-6 sm:static min-w-5 h-5 px-1 rounded-full bg-purple-700 text-white text-xs leading-5 text-center">{bolsa.length}</span>}
             </button>
             {cuenta ? (
@@ -144,8 +157,9 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
           <section className="bg-slate-900 text-white relative overflow-hidden">
             <div className="absolute -right-10 -bottom-16 w-72 h-72 opacity-25 pointer-events-none"><Isotipo className="w-full h-full" /></div>
             <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
-              <h1 className="vx-d text-2xl sm:text-5xl font-extrabold leading-tight max-w-2xl">Cada par es único. Cuando lo apartas, es tuyo.</h1>
-              <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-300 max-w-xl">Tenis seleccionados en excelente estado. Recógelos en una paquetería de Cochabamba o te los enviamos a provincias y otros países.</p>
+              <p className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-cyan-300 mb-2"><MapPin size={14} /> Somos de Cochabamba, Bolivia</p>
+              <h1 className="vx-d text-2xl sm:text-5xl font-extrabold leading-tight max-w-2xl">Cada par es único. Se lo lleva el primero que paga.</h1>
+              <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-300 max-w-xl">Tenis seleccionados en excelente estado. Recógelos en una paquetería de Cochabamba o te los enviamos a cualquier departamento de Bolivia.</p>
               {cat && <p className="mt-4 text-sm text-cyan-300 font-semibold">{cat.length} pares disponibles ahora</p>}
             </div>
           </section>
@@ -194,16 +208,17 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
                           <ZoomIn size={13} /> {p.photos.length > 1 ? `${p.photos.length} fotos` : "Foto"}
                         </button>
                       )}
-                      {enBolsa(p.id) && <span className="absolute top-2 left-2 flex items-center gap-1 text-xs font-semibold bg-purple-700 text-white rounded-md px-2 py-0.5"><Check size={12} /> En tu pedido</span>}
+                      {enBolsa(p.id) && <span className="absolute top-2 left-2 flex items-center gap-1 text-xs font-semibold bg-purple-700 text-white rounded-md px-2 py-0.5"><Check size={12} /> En tu carrito</span>}
                     </div>
                     <button className="text-left px-3 pt-2.5 flex-1" onClick={() => setDetalle(p.id)}>
                       <div className="text-sm font-semibold text-slate-900 truncate">{p.marca} {p.modelo}</div>
                       <div className="text-xs text-slate-500 mt-0.5 truncate">Talla {String(p.talla).replace(".", ",")}{p.cm ? ` · ${fcm(p.cm)}` : ""} · {p.color}</div>
                       <div className="vx-d vx-num text-lg font-bold text-slate-900 mt-1">{bs0(p.precio)}</div>
                     </button>
-                    <div className="p-3 pt-2">
-                      <Btn size="sm" variant={enBolsa(p.id) ? "outline" : "primary"} className="w-full" onClick={() => alternar(p)}>
-                        {enBolsa(p.id) ? <><Check size={14} /> En tu pedido</> : <><Plus size={14} /> Lo quiero</>}
+                    <div className="p-3 pt-2 space-y-1.5">
+                      <Btn size="sm" className="w-full" onClick={() => comprarYa(p)}><ShoppingBag size={14} /> Lo compro</Btn>
+                      <Btn size="sm" variant="outline" className="w-full" onClick={() => alternar(p)}>
+                        {enBolsa(p.id) ? <><Check size={14} /> En tu carrito</> : <><Plus size={14} /> Añadir al carrito</>}
                       </Btn>
                     </div>
                   </article>
@@ -216,15 +231,15 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
 
       <footer className="border-t border-slate-200 bg-white">
         <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-24 sm:pb-6 flex flex-col sm:flex-row gap-2 justify-between text-xs text-slate-500">
-          <span>VORTEX SNEAKERS · Cochabamba, Bolivia</span>
+          <span className="flex items-center gap-1"><MapPin size={12} /> VORTEX SNEAKERS · Cochabamba, Bolivia · Envíos a todo el país{cfg.whatsapp ? ` · WhatsApp ${cfg.whatsapp}` : ""}</span>
           {!cuenta && !vistaPrevia && <button className="text-left sm:text-right underline" onClick={() => setAuth({ modo: "entrar", motivo: "Si eres parte del equipo, entra con tu correo de trabajo." })}>¿Eres parte del equipo? Ingresa aquí</button>}
         </div>
       </footer>
 
       {/* Barra inferior en el celular */}
-      {bolsa.length > 0 && !bolsaAbierta && (
+      {bolsa.length > 0 && !bolsaAbierta && !directo && (
         <div className="sm:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 p-3 vx-safe-b">
-          <Btn className="w-full py-3" onClick={() => setBolsaAbierta(true)}><ShoppingBag size={17} /> Ver mi pedido · {bolsa.length} par{bolsa.length === 1 ? "" : "es"} · {bs0((cat || []).filter((p) => bolsa.includes(p.id)).reduce((a, p) => a + p.precio, 0))}</Btn>
+          <Btn className="w-full py-3" onClick={() => setBolsaAbierta(true)}><ShoppingBag size={17} /> Ver mi carrito · {bolsa.length} par{bolsa.length === 1 ? "" : "es"} · {bs0((cat || []).filter((p) => bolsa.includes(p.id)).reduce((a, p) => a + p.precio, 0))}</Btn>
         </div>
       )}
       {cuenta && vista === "catalogo" && bolsa.length === 0 && (
@@ -233,15 +248,16 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
         </div>
       )}
 
-      {pDetalle && <DetallePar p={pDetalle} enBolsa={enBolsa(pDetalle.id)} onAlternar={() => alternar(pDetalle)} onFotos={(i) => setVisor({ ...pDetalle, start: i })} onClose={() => setDetalle(null)} />}
+      {pDetalle && <DetallePar p={pDetalle} enBolsa={enBolsa(pDetalle.id)} onAlternar={() => alternar(pDetalle)} onComprar={() => comprarYa(pDetalle)} onFotos={(i) => setVisor({ ...pDetalle, start: i })} onClose={() => setDetalle(null)} />}
       {visor && <PhotoViewer urls={visor.photos.map((f) => f.url)} start={visor.start || 0} title={`${visor.marca} ${visor.modelo}`} onClose={() => setVisor(null)} />}
-      {bolsaAbierta && (
+      {(bolsaAbierta || directo) && (
         <Bolsa
-          pares={(cat || []).filter((p) => bolsa.includes(p.id))} cfg={cfg} cuenta={cuenta}
-          onQuitar={(id) => setBolsa(bolsa.filter((x) => x !== id))}
-          onClose={() => setBolsaAbierta(false)}
-          onNecesitaCuenta={() => { if (vistaPrevia) { toast("Vista de cliente: aquí el cliente crearía su cuenta y enviaría el pedido. No se envió nada."); return; } try { sessionStorage.setItem("vx-abrir-bolsa", "1"); } catch {} setBolsaAbierta(false); setAuth({ modo: "crear", motivo: "Para enviar tu pedido, crea tu cuenta o ingresa. Tus pares siguen guardados." }); }}
-          onEnviado={(pedido) => { setBolsa([]); setBolsaAbierta(false); setDestacar(pedido); setVista("pedidos"); window.scrollTo(0, 0); toast(`Pedido ${pedido} creado. Ahora paga con el QR y sube tu comprobante.`); cargar(); }}
+          directo={!!directo}
+          pares={directo ? (cat || []).filter((p) => p.id === directo) : (cat || []).filter((p) => bolsa.includes(p.id))} cfg={cfg} cuenta={cuenta}
+          onQuitar={(id) => (directo ? setDirecto(null) : setBolsa(bolsa.filter((x) => x !== id)))}
+          onClose={() => { setBolsaAbierta(false); setDirecto(null); }}
+          onNecesitaCuenta={() => { if (vistaPrevia) { toast("Vista de cliente: aquí el cliente crearía su cuenta y enviaría el pedido. No se envió nada."); return; } try { sessionStorage.setItem("vx-abrir-bolsa", directo ? "d:" + directo : "1"); } catch {} setBolsaAbierta(false); setDirecto(null); setAuth({ modo: "crear", motivo: "Para comprar, crea tu cuenta o ingresa. Tus pares siguen guardados." }); }}
+          onEnviado={(pedido) => { if (directo) setBolsa(bolsa.filter((x) => x !== directo)); else setBolsa([]); setBolsaAbierta(false); setDirecto(null); setDestacar(pedido); setVista("pedidos"); window.scrollTo(0, 0); toast(`Pedido ${pedido} creado. Ahora paga con el QR y sube tu comprobante.`); cargar(); }}
           onError={async (msg) => { toast(msg, "err"); await cargar(); }}
         />
       )}
@@ -259,11 +275,11 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   );
 }
 
-function DetallePar({ p, enBolsa, onAlternar, onFotos, onClose }) {
+function DetallePar({ p, enBolsa, onAlternar, onComprar, onFotos, onClose }) {
   const [i, setI] = useState(0);
   const [video, setVideo] = useState(null);
   return (
-    <Modal wide title={`${p.marca} ${p.modelo}`} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn variant={enBolsa ? "outline" : "primary"} onClick={onAlternar}>{enBolsa ? <><Trash2 size={15} /> Quitar de mi pedido</> : <><Plus size={15} /> Lo quiero</>}</Btn></>}>
+    <Modal wide title={`${p.marca} ${p.modelo}`} onClose={onClose} footer={<><Btn variant="outline" onClick={onAlternar}>{enBolsa ? <><Trash2 size={15} /> Quitar del carrito</> : <><Plus size={15} /> Añadir al carrito</>}</Btn><Btn onClick={onComprar}><ShoppingBag size={15} /> Lo compro</Btn></>}>
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <div className="relative aspect-square rounded-xl overflow-hidden vx-photo">
@@ -297,7 +313,7 @@ function DetallePar({ p, enBolsa, onAlternar, onFotos, onClose }) {
           {p.descripcion && <p className="text-sm text-slate-600 leading-relaxed">{p.descripcion}</p>}
           <div className="rounded-xl bg-slate-50 p-3 text-xs text-slate-600 space-y-1.5">
             <div className="flex gap-2"><Package size={14} className="shrink-0 text-slate-400" /> Recógelo en una paquetería de Cochabamba</div>
-            <div className="flex gap-2"><Truck size={14} className="shrink-0 text-slate-400" /> Envío a provincias y a otros países</div>
+            <div className="flex gap-2"><Truck size={14} className="shrink-0 text-slate-400" /> Envío a todos los departamentos de Bolivia</div>
             <div className="flex gap-2"><QrCode size={14} className="shrink-0 text-slate-400" /> Pagas con QR y subes tu comprobante</div>
           </div>
         </div>
@@ -306,7 +322,7 @@ function DetallePar({ p, enBolsa, onAlternar, onFotos, onClose }) {
   );
 }
 
-function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnviado, onError }) {
+function Bolsa({ directo = false, pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnviado, onError }) {
   const [modo, setModo] = useState("cochabamba");
   const [destino, setDestino] = useState("");
   const [otroDestino, setOtroDestino] = useState("");
@@ -328,12 +344,12 @@ function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnvi
     onEnviado(data);
   });
   return (
-    <Modal wide title="Mi pedido" onClose={onClose} footer={<>
-      <Btn variant="ghost" onClick={onClose}>Seguir viendo</Btn>
+    <Modal wide title={directo ? "Comprar este par" : "Mi carrito"} onClose={onClose} footer={<>
+      <Btn variant="ghost" onClick={onClose}>{directo ? "Cancelar" : "Seguir viendo"}</Btn>
       <Btn disabled={busy || !!falta} onClick={enviar}>{busy ? <Spinner /> : <ShoppingBag size={15} />} {cuenta ? "Comprar" : "Continuar"}</Btn>
     </>}>
       {!pares.length ? (
-        <div className="py-8 text-center text-sm text-slate-500">Tu pedido está vacío. Toca <b>Lo quiero</b> en los pares que te gusten.</div>
+        <div className="py-8 text-center text-sm text-slate-500">Tu carrito está vacío. Toca <b>Añadir al carrito</b> en los pares que te gusten, o <b>Lo compro</b> para comprar uno directo.</div>
       ) : (
         <>
           <div className="rounded-xl border border-slate-200 divide-y divide-slate-100">
@@ -363,9 +379,9 @@ function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnvi
           {modo === "envio" && (
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="¿A dónde lo enviamos?">
-                <Select value={destino} onChange={(e) => setDestino(e.target.value)} options={[{ value: "", label: "Elige el lugar" }, ...cfg.destinos.filter((d) => d !== "Cochabamba").map((d) => ({ value: d, label: d })), { value: "__otro", label: "Otra provincia o país" }]} />
+                <Select value={destino} onChange={(e) => setDestino(e.target.value)} options={[{ value: "", label: "Elige el lugar" }, ...cfg.destinos.filter((d) => d !== "Cochabamba").map((d) => ({ value: d, label: d })), { value: "__otro", label: "Otra ciudad o provincia" }]} />
               </Field>
-              {destino === "__otro" && <Field label="Escribe el lugar"><Input value={otroDestino} maxLength={80} placeholder="Ej.: Punata, o Lima (Perú)" onChange={(e) => setOtroDestino(e.target.value)} /></Field>}
+              {destino === "__otro" && <Field label="Escribe el lugar"><Input value={otroDestino} maxLength={80} placeholder="Ej.: Punata, Montero, Riberalta" onChange={(e) => setOtroDestino(e.target.value)} /></Field>}
             </div>
           )}
           <div className="grid sm:grid-cols-2 gap-3">
@@ -376,6 +392,7 @@ function Bolsa({ pares, cfg, cuenta, onQuitar, onClose, onNecesitaCuenta, onEnvi
           <div className="rounded-xl bg-purple-50 p-3 text-xs text-purple-900 flex gap-2"><QrCode size={16} className="shrink-0 text-purple-700" /><span>Al tocar <b>Comprar</b> pasas directo a pagar con el QR. <b>No apartamos pares:</b> se lo lleva quien pague primero y suba su comprobante. Cuando verifiquemos el pago, te avisamos la fecha de envío.{modo === "envio" ? " El costo de la encomienda lo pagas al recoger." : ""}</span></div>
           {!cuenta && <div className="rounded-xl bg-cyan-50 p-3 text-sm text-cyan-900 flex gap-2"><User size={16} className="shrink-0 mt-0.5" /> Para comprar necesitas una cuenta. Te pediremos tu nombre, teléfono y correo; tus pares siguen guardados.</div>}
           {falta && pares.length > 0 && <p className="text-xs text-amber-700">{falta}</p>}
+          <Contacto cfg={cfg} pedido="" mensaje={`Hola VORTEX SNEAKERS, tengo una duda sobre ${pares.map((p) => `${p.marca} ${p.modelo} (${p.codigo})`).join(", ")}.`} texto="¿Tienes alguna duda? Escríbenos" />
         </>
       )}
     </Modal>
@@ -495,10 +512,10 @@ function estadoPedido(items) {
 }
 
 const waTienda = (tel, texto) => `https://wa.me/${String(tel).startsWith("591") || String(tel).startsWith("+") ? String(tel).replace("+", "") : "591" + tel}?text=${encodeURIComponent(texto)}`;
-function Contacto({ cfg, pedido, texto = "¿Tienes dudas? Escríbenos" }) {
+function Contacto({ cfg, pedido, texto = "¿Tienes dudas? Escríbenos", mensaje = "" }) {
   if (!cfg?.whatsapp) return null;
   return (
-    <a href={waTienda(cfg.whatsapp, `Hola VORTEX SNEAKERS, les escribo por mi pedido ${pedido}.`)} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2.5 text-sm text-cyan-900 hover:bg-cyan-100">
+    <a href={waTienda(cfg.whatsapp, mensaje || `Hola VORTEX SNEAKERS, les escribo por mi pedido ${pedido}.`)} target="_blank" rel="noreferrer" className="flex items-center justify-between gap-2 rounded-xl border border-cyan-200 bg-cyan-50 px-3 py-2.5 text-sm text-cyan-900 hover:bg-cyan-100">
       <span>{texto} por WhatsApp: <b>{cfg.whatsapp}</b></span><ChevronRight size={16} />
     </a>
   );
@@ -719,7 +736,21 @@ function MisPedidos({ onVolver, toast, recargarCatalogo, cfg, destacar = "" }) {
                   {porPagar.length > 0 && !enRevision && (libres.length ? (
                     <>
                       <p className="text-xs text-slate-600 flex items-start gap-1"><AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-600" /> Los pares no están apartados: se los lleva quien pague primero. Paga y sube tu comprobante cuanto antes (este pedido se cancela el {ftime(est.vence)}).</p>
-                      <PagosQr items={libres} onAbrir={setQrAbierto} />
+                      {(() => {
+                        const qt = libres[0]?.qr_total;
+                        const sinQr = libres.some((x) => !x.qr);
+                        if (qt && (libres.length > 1 || sinQr)) return (
+                          <>
+                            <button onClick={() => setQrAbierto({ ruta: qt.ruta, monto: qt.monto, nombre: qt.nombre, pares: libres.map((x) => x.par), total: Number(qt.total), todo: true })} className="w-full flex items-center gap-3 rounded-xl bg-purple-700 hover:bg-purple-800 text-white px-3 py-3 text-left">
+                              <span className="w-10 h-10 rounded-lg bg-white grid place-items-center text-purple-700 shrink-0"><QrCode size={22} /></span>
+                              <span className="flex-1 min-w-0"><span className="block text-sm font-semibold">Pagar todo con un QR · {bs0(qt.total)}</span><span className="block text-xs text-purple-100">{libres.length > 1 ? `Los ${libres.length} pares en un solo pago` : "Paga tu par con este QR"}</span></span>
+                              <ChevronRight size={18} />
+                            </button>
+                            {libres.length > 1 && !sinQr && <details className="text-sm"><summary className="cursor-pointer text-xs font-semibold text-slate-600 py-1">O paga cada par por separado</summary><div className="pt-2"><PagosQr items={libres} onAbrir={setQrAbierto} /></div></details>}
+                          </>
+                        );
+                        return <PagosQr items={libres} onAbrir={setQrAbierto} />;
+                      })()}
                       <SubirComprobante pedido={k} total={porCobrar} varios={new Set(libres.map((x) => x.qr?.ruta || x.reserva)).size > 1} toast={toast} onListo={subido} />
                     </>
                   ) : (
@@ -776,7 +807,10 @@ function PagarQr({ qr, onClose, toast }) {
   return (
     <Modal title="Pagar con QR" onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy} onClick={descargar}>{busy ? <Spinner /> : <Download size={15} />} Guardar QR</Btn></>}>
       <div className="rounded-xl bg-white border border-slate-200 p-3"><img src={url} alt="Código QR para pagar" className="w-full max-h-96 object-contain" /></div>
-      {qr.monto ? (
+      {qr.todo ? (
+        qr.monto ? <div className="text-center"><div className="text-xs text-slate-500">Monto a pagar ({n === 1 ? "tu par" : `los ${n} pares`})</div><div className="vx-d text-3xl font-bold text-slate-900">{bs0(qr.monto)}</div></div>
+          : <div className="text-center"><div className="text-xs text-slate-500">Escribe en tu banco el total{n > 1 ? ` de los ${n} pares` : ""}</div><div className="vx-d text-3xl font-bold text-slate-900">{bs0(qr.total)}</div></div>
+      ) : qr.monto ? (
         <div className="text-center"><div className="text-xs text-slate-500">Monto a pagar{n > 1 ? " por cada par" : ""}</div><div className="vx-d text-3xl font-bold text-slate-900">{bs0(qr.monto)}</div>{n > 1 && <div className="text-xs text-slate-500">Son {n} pares: paga {n} veces o un total de <b>{bs0(qr.monto * n)}</b> si tu banco permite cambiar el monto.</div>}</div>
       ) : (
         <div className="text-center text-sm text-slate-600">Escribe en tu banco el monto del par: <b>{qr.pares.map((p) => bs0(p.precio)).join(" + ")}</b></div>

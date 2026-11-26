@@ -1,3 +1,4 @@
+import { useAtras } from "../lib/atras";
 import { useState } from "react";
 import { X, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { C } from "../lib/utils";
@@ -90,6 +91,7 @@ export const inputCls = "w-full rounded-lg border border-slate-300 bg-white px-3
 export const Input = (p) => <input className={inputCls} {...p} />;
 export const Select = ({ options, ...p }) => <select className={inputCls} {...p}>{options.map((o) => typeof o === "string" ? <option key={o} value={o}>{o}</option> : <option key={o.value} value={o.value}>{o.label}</option>)}</select>;
 export function Modal({ title, onClose, children, footer, wide }) {
+  useAtras(true, onClose);
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900 bg-opacity-40 p-0 sm:p-4" onClick={onClose}>
       <div className={`bg-white w-full ${wide ? "sm:max-w-2xl" : "sm:max-w-lg"} rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col`} style={{ maxHeight: "92vh" }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>

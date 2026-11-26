@@ -1,3 +1,4 @@
+import { useAtras } from "../lib/atras";
 import { useState, useEffect, useRef } from "react";
 import { Camera, ImagePlus, X, ChevronLeft, ChevronRight, RefreshCw, Check, ZoomIn } from "lucide-react";
 
@@ -36,6 +37,7 @@ export function PhotoPicker({ onFiles, disabled = false, compact = false, max = 
 
 /** Cámara dentro de la app (sobre todo para computadora con cámara web) */
 export function CameraModal({ onClose, onDone, onFallback, max = 8 }) {
+  useAtras(true, onClose);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
   const [frente, setFrente] = useState("environment");
@@ -127,39 +129,123 @@ export function CameraModal({ onClose, onDone, onFallback, max = 8 }) {
 
 /** Ver las fotos completas en pantalla grande. Desliza o usa las flechas; doble toque para acercar. */
 export function PhotoViewer({ urls, start = 0, title = "", onClose }) {
+  useAtras(true, onClose);
   const [i, setI] = useState(Math.min(start, Math.max(0, urls.length - 1)));
-  const [zoom, setZoom] = useState(null); // { x, y } en % cuando está acercada
-  const toque = useRef(null);
-  const ultimoToque = useRef(0);
-  const ir = (d) => { setZoom(null); setI((n) => (n + d + urls.length) % urls.length); };
+  const [acercada, setAcercada] = useState(false);
+  const zonaRef = useRef(null);
+  const imgRef = useRef(null);
+  // Estado del zoom en una referencia: se mueve la imagen directo, sin redibujar la pantalla en cada movimiento
+  const z = useRef({ s: 1, x: 0, y: 0 });
+  const dedos = useRef(new Map());
+  const gesto = useRef(null);
+  const ultimoToque = useRef({ t: 0, x: 0, y: 0 });
+  const cuadro = useRef(0);
+
+  const aplicar = (animar = false) => {
+    const el = imgRef.current;
+    if (!el) return;
+    cancelAnimationFrame(cuadro.current);
+    cuadro.current = requestAnimationFrame(() => {
+      el.style.transition = animar ? "transform 180ms ease-out" : "none";
+      el.style.transform = `translate3d(${z.current.x}px, ${z.current.y}px, 0) scale(${z.current.s})`;
+    });
+  };
+  // Que la foto no se salga de la pantalla al moverla
+  const limitar = () => {
+    const zona = zonaRef.current, img = imgRef.current;
+    if (!zona || !img) return;
+    const W = zona.clientWidth, H = zona.clientHeight;
+    const nw = img.naturalWidth || W, nh = img.naturalHeight || H;
+    const base = Math.min(W / nw, H / nh);
+    const w = nw * base * z.current.s, h = nh * base * z.current.s;
+    const mx = Math.max(0, (w - W) / 2), my = Math.max(0, (h - H) / 2);
+    z.current.x = Math.min(mx, Math.max(-mx, z.current.x));
+    z.current.y = Math.min(my, Math.max(-my, z.current.y));
+  };
+  const zoomEn = (nuevo, cx, cy, animar = false) => {
+    const zona = zonaRef.current;
+    if (!zona) return;
+    const r = zona.getBoundingClientRect();
+    const px = cx - r.left - r.width / 2, py = cy - r.top - r.height / 2;
+    const s0 = z.current.s;
+    const s = Math.min(5, Math.max(1, nuevo));
+    // El punto bajo los dedos queda en el mismo lugar
+    z.current.x = px - ((px - z.current.x) * s) / s0;
+    z.current.y = py - ((py - z.current.y) * s) / s0;
+    z.current.s = s;
+    if (s === 1) { z.current.x = 0; z.current.y = 0; }
+    limitar(); aplicar(animar);
+    const a = s > 1.01;
+    setAcercada((v) => (v === a ? v : a));
+  };
+  const reiniciar = (animar = false) => { z.current = { s: 1, x: 0, y: 0 }; aplicar(animar); setAcercada(false); };
+  const ir = (d) => { reiniciar(); setI((n) => (n + d + urls.length) % urls.length); };
 
   useEffect(() => {
     const k = (e) => {
-      if (e.key === "Escape") onClose();
       if (e.key === "ArrowRight" && urls.length > 1) ir(1);
       if (e.key === "ArrowLeft" && urls.length > 1) ir(-1);
     };
     window.addEventListener("keydown", k);
-    return () => window.removeEventListener("keydown", k);
+    return () => { window.removeEventListener("keydown", k); cancelAnimationFrame(cuadro.current); };
   }, [urls.length]);
+  useEffect(() => {
+    const zona = zonaRef.current;
+    if (!zona) return;
+    const rueda = (e) => { e.preventDefault(); zoomEn(z.current.s * (e.deltaY < 0 ? 1.15 : 1 / 1.15), e.clientX, e.clientY); };
+    zona.addEventListener("wheel", rueda, { passive: false });
+    return () => zona.removeEventListener("wheel", rueda);
+  }, []);
 
-  const alternarZoom = (ev) => {
-    const r = ev.currentTarget.getBoundingClientRect();
-    setZoom(zoom ? null : { x: ((ev.clientX - r.left) / r.width) * 100, y: ((ev.clientY - r.top) / r.height) * 100 });
-  };
-  const abajo = (ev) => { toque.current = { x: ev.clientX, y: ev.clientY }; };
-  const arriba = (ev) => {
-    const t = toque.current;
-    toque.current = null;
-    if (!t) return;
-    const dx = ev.clientX - t.x, dy = ev.clientY - t.y;
-    if (!zoom && Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) && urls.length > 1) { ir(dx < 0 ? 1 : -1); return; }
-    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) {
-      const ahora = Date.now();
-      if (ahora - ultimoToque.current < 300) { alternarZoom(ev); ultimoToque.current = 0; }
-      else ultimoToque.current = ahora;
+  const abajo = (e) => {
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    dedos.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const ps = [...dedos.current.values()];
+    if (ps.length === 2) {
+      const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) || 1;
+      gesto.current = { tipo: "pellizco", d, s: z.current.s };
+    } else if (ps.length === 1) {
+      gesto.current = { tipo: "uno", x0: e.clientX, y0: e.clientY, px: z.current.x, py: z.current.y, t: Date.now(), movio: false };
     }
   };
+  const mover = (e) => {
+    if (!dedos.current.has(e.pointerId)) return;
+    dedos.current.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    const g = gesto.current;
+    if (!g) return;
+    const ps = [...dedos.current.values()];
+    if (g.tipo === "pellizco" && ps.length >= 2) {
+      const d = Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) || 1;
+      zoomEn(g.s * (d / g.d), (ps[0].x + ps[1].x) / 2, (ps[0].y + ps[1].y) / 2);
+    } else if (g.tipo === "uno") {
+      const dx = e.clientX - g.x0, dy = e.clientY - g.y0;
+      if (Math.abs(dx) > 6 || Math.abs(dy) > 6) g.movio = true;
+      if (z.current.s > 1.01) { z.current.x = g.px + dx; z.current.y = g.py + dy; limitar(); aplicar(); }
+      else if (urls.length > 1) { const el = imgRef.current; if (el) { el.style.transition = "none"; el.style.transform = `translate3d(${dx}px,0,0)`; } }
+    }
+  };
+  const arriba = (e) => {
+    dedos.current.delete(e.pointerId);
+    const g = gesto.current;
+    if (g?.tipo === "pellizco") {
+      if (dedos.current.size === 0) { gesto.current = null; if (z.current.s < 1.05) reiniciar(true); }
+      else { const [p] = [...dedos.current.values()]; gesto.current = { tipo: "uno", x0: p.x, y0: p.y, px: z.current.x, py: z.current.y, t: Date.now(), movio: true }; }
+      return;
+    }
+    gesto.current = null;
+    if (!g) return;
+    const dx = e.clientX - g.x0, dy = e.clientY - g.y0;
+    if (z.current.s <= 1.01 && urls.length > 1 && Math.abs(dx) > 60 && Math.abs(dx) > Math.abs(dy)) { ir(dx < 0 ? 1 : -1); return; }
+    if (z.current.s <= 1.01) aplicar(true);
+    if (!g.movio) {
+      const ahora = Date.now(), u = ultimoToque.current;
+      if (ahora - u.t < 320 && Math.hypot(e.clientX - u.x, e.clientY - u.y) < 40) {
+        ultimoToque.current = { t: 0, x: 0, y: 0 };
+        if (z.current.s > 1.01) reiniciar(true); else zoomEn(2.5, e.clientX, e.clientY, true);
+      } else ultimoToque.current = { t: ahora, x: e.clientX, y: e.clientY };
+    }
+  };
+  const cancelar = (e) => { dedos.current.delete(e.pointerId); gesto.current = null; };
 
   if (!urls.length) return null;
   return (
@@ -167,31 +253,31 @@ export function PhotoViewer({ urls, start = 0, title = "", onClose }) {
       <div className="flex items-center justify-between px-4 h-14 text-white shrink-0">
         <span className="text-sm font-semibold truncate">{title}{urls.length > 1 ? `  ·  ${i + 1} de ${urls.length}` : ""}</span>
         <div className="flex items-center gap-1">
-          <button onClick={() => setZoom(zoom ? null : { x: 50, y: 50 })} className={`p-2 rounded-lg ${zoom ? "bg-white text-slate-900" : "hover:bg-slate-800"}`} aria-label={zoom ? "Alejar" : "Acercar"} aria-pressed={!!zoom}><ZoomIn size={19} /></button>
+          <button onClick={() => { const r = zonaRef.current?.getBoundingClientRect(); if (acercada) reiniciar(true); else if (r) zoomEn(2.5, r.left + r.width / 2, r.top + r.height / 2, true); }} className={`p-2 rounded-lg ${acercada ? "bg-white text-slate-900" : "hover:bg-slate-800"}`} aria-label={acercada ? "Alejar" : "Acercar"} aria-pressed={acercada}><ZoomIn size={19} /></button>
           <button onClick={onClose} className="p-2 rounded-lg hover:bg-slate-800" aria-label="Cerrar"><X size={22} /></button>
         </div>
       </div>
-      <div className="relative flex-1 min-h-0 overflow-hidden" style={{ touchAction: zoom ? "auto" : "pan-y" }} onPointerDown={abajo} onPointerUp={arriba}>
-        <img src={urls[i]} alt={title ? `${title}, foto ${i + 1}` : `Foto ${i + 1}`} draggable={false}
-          className="absolute inset-0 w-full h-full object-contain transition-transform duration-200"
-          style={zoom ? { transform: "scale(2.2)", transformOrigin: `${zoom.x}% ${zoom.y}%` } : undefined} />
-        {urls.length > 1 && (
+      <div ref={zonaRef} className="relative flex-1 min-h-0 overflow-hidden" style={{ touchAction: "none" }}
+        onPointerDown={abajo} onPointerMove={mover} onPointerUp={arriba} onPointerCancel={cancelar}>
+        <img ref={imgRef} key={urls[i]} src={urls[i]} alt={title ? `${title}, foto ${i + 1}` : `Foto ${i + 1}`} draggable={false} decoding="async"
+          className="absolute inset-0 w-full h-full object-contain will-change-transform" style={{ transformOrigin: "50% 50%" }} />
+        {urls.length > 1 && !acercada && (
           <>
-            <button onClick={(e) => { e.stopPropagation(); ir(-1); }} onPointerUp={(e) => e.stopPropagation()} className="absolute left-2 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white text-slate-900 shadow" aria-label="Foto anterior"><ChevronLeft size={22} /></button>
-            <button onClick={(e) => { e.stopPropagation(); ir(1); }} onPointerUp={(e) => e.stopPropagation()} className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white text-slate-900 shadow" aria-label="Foto siguiente"><ChevronRight size={22} /></button>
+            <button onClick={(e) => { e.stopPropagation(); ir(-1); }} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} className="absolute left-2 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white text-slate-900 shadow" aria-label="Foto anterior"><ChevronLeft size={22} /></button>
+            <button onClick={(e) => { e.stopPropagation(); ir(1); }} onPointerDown={(e) => e.stopPropagation()} onPointerUp={(e) => e.stopPropagation()} className="absolute right-2 top-1/2 -translate-y-1/2 p-2.5 rounded-full bg-white text-slate-900 shadow" aria-label="Foto siguiente"><ChevronRight size={22} /></button>
           </>
         )}
       </div>
       {urls.length > 1 && (
         <div className="flex justify-center gap-2 overflow-x-auto px-4 py-3 vx-safe-b shrink-0">
           {urls.map((u, n) => (
-            <button key={u + n} onClick={() => { setZoom(null); setI(n); }} className={`w-14 h-11 rounded-md overflow-hidden shrink-0 border-2 ${n === i ? "border-white" : "border-transparent opacity-60"}`} aria-label={`Ver foto ${n + 1}`}>
-              <img src={u} alt="" className="w-full h-full object-cover" />
+            <button key={u + n} onClick={() => { reiniciar(); setI(n); }} className={`w-14 h-11 rounded-md overflow-hidden shrink-0 border-2 ${n === i ? "border-white" : "border-transparent opacity-60"}`} aria-label={`Ver foto ${n + 1}`}>
+              <img src={u} alt="" loading="lazy" className="w-full h-full object-cover" />
             </button>
           ))}
         </div>
       )}
-      {urls.length < 2 && <p className="text-center text-xs text-slate-400 py-3 vx-safe-b">Toca dos veces para acercar</p>}
+      <p className="text-center text-xs text-slate-400 pb-3 vx-safe-b">{acercada ? "Arrastra para mover · toca dos veces para alejar" : "Pellizca o toca dos veces para acercar"}</p>
     </div>
   );
 }

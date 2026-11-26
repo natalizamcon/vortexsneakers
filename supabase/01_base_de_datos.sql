@@ -2276,6 +2276,166 @@ end $$;
 
 grant execute on function public.catalogo_publico() to anon, authenticated;
 
+-- =====================================================================
+--  QR AUTOMÁTICO, QR DEL TOTAL Y CONTACTO
+--  • Cada par nuevo recibe solo el QR de su mismo precio (o uno de monto libre).
+--    Si cambias el precio, también cambia al QR que corresponde.
+--  • En compras de varios pares el cliente ve un QR por el total del pedido
+--    (un QR con ese monto exacto, o un QR de monto libre).
+--  • WhatsApp de contacto por defecto: 62035357.
+-- =====================================================================
+
+create or replace function public._qr_automatico() returns trigger
+language plpgsql security definer set search_path = public as $$
+declare
+  v_q uuid;
+  v_monto numeric;
+begin
+  if tg_op = 'INSERT' then
+    if new.qr_id is not null then return new; end if;
+  else
+    if new.precio is not distinct from old.precio then return new; end if;
+    if new.qr_id is distinct from old.qr_id then return new; end if;     -- lo cambiaron a mano
+    if new.qr_id is not null then
+      select monto into v_monto from public.qr_pagos where id = new.qr_id;
+      if v_monto = new.precio then return new; end if;                    -- ya coincide
+      if v_monto is null then                                              -- monto libre: solo cambia si hay uno exacto
+        select id into v_q from public.qr_pagos where monto = new.precio order by creado_en desc limit 1;
+        if v_q is not null then new.qr_id := v_q; end if;
+        return new;
+      end if;
+    end if;
+  end if;
+  select id into v_q from public.qr_pagos where monto = new.precio order by creado_en desc limit 1;
+  if v_q is null then
+    select id into v_q from public.qr_pagos where monto is null order by creado_en desc limit 1;
+  end if;
+  if v_q is not null or tg_op = 'UPDATE' then new.qr_id := v_q; end if;
+  return new;
+end $$;
+drop trigger if exists vortex_producto_qr on public.productos;
+create trigger vortex_producto_qr before insert or update of precio on public.productos
+for each row execute function public._qr_automatico();
+
+-- Pares a la venta que todavía no tienen QR: se les pone el de su precio (o uno de monto libre)
+do $$
+begin
+  perform set_config('vortex.interno', 'si', true);
+  update public.productos p
+     set qr_id = coalesce(
+           (select q.id from public.qr_pagos q where q.monto = p.precio order by q.creado_en desc limit 1),
+           (select q.id from public.qr_pagos q where q.monto is null order by q.creado_en desc limit 1))
+   where p.qr_id is null and p.estado in ('Disponible', 'Reservado');
+end $$;
+
+update public.configuracion set whatsapp = '62035357' where id = 1 and coalesce(whatsapp, '') = '';
+
+create or replace function public.cliente_pedir(p_productos uuid[], p_tipo text, p_envio jsonb, p_nota text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v_c uuid := public._mi_cliente();
+  v_modo text := coalesce(p_envio->>'modo', '');
+  v_destino text := left(trim(coalesce(p_envio->>'destino', '')), 80);
+  v_recibe text := left(trim(coalesce(p_envio->>'recibe', '')), 100);
+  v_ci text := left(trim(coalesce(p_envio->>'ci', '')), 30);
+  v_envio jsonb;
+  v_horas int := coalesce((select vigencia_horas from public.configuracion where id = 1), 48);
+  v_grupo text;
+  v_res text;
+  p record;
+  n int := coalesce(array_length(p_productos, 1), 0);
+begin
+  if v_c is null then raise exception 'Inicia sesión con tu cuenta de cliente para hacer pedidos.'; end if;
+  if n = 0 then raise exception 'Elige al menos un par.'; end if;
+  if n > 5 then raise exception 'Puedes pedir hasta 5 pares a la vez.'; end if;
+  if (select count(*) from public.reservas where cliente_id = v_c and web and estado in ('Por pagar','Activa')) + n > 5 then
+    raise exception 'Ya tienes pedidos sin terminar. Paga o cancela los que tienes en "Mis pedidos".';
+  end if;
+  if v_modo = 'cochabamba' then
+    v_destino := 'Cochabamba';
+  elsif v_modo = 'envio' then
+    if v_destino = '' then raise exception 'Escribe a qué departamento, ciudad o provincia se envía.'; end if;
+  else
+    raise exception 'Elige cómo quieres recibir tu pedido.';
+  end if;
+  if v_recibe = '' then raise exception 'Escribe el nombre de quien recoge.'; end if;
+  if length(v_ci) < 4 then raise exception 'Escribe el carnet de identidad (CI) de quien recoge.'; end if;
+
+  v_envio := jsonb_build_object('entrega', 'Encomienda', 'modo', v_modo, 'destino', v_destino,
+    'recibe', v_recibe, 'ci', v_ci, 'transportista', '', 'direccion', '', 'pagaCliente', true, 'delivery', 0);
+
+  for p in select * from public.productos where id = any(p_productos) order by codigo loop
+    if p.estado <> 'Disponible' then
+      raise exception '% ya no está disponible. Quítalo de tu pedido e inténtalo otra vez.', p.marca || ' ' || p.modelo || ' (' || p.codigo || ')';
+    end if;
+    if exists (select 1 from public.reservas where cliente_id = v_c and producto_id = p.id and web and estado = 'Por pagar') then
+      raise exception '% ya está en uno de tus pedidos por pagar. Revisa "Mis pedidos".', p.marca || ' ' || p.modelo;
+    end if;
+  end loop;
+  if (select count(*) from public.productos where id = any(p_productos)) <> n then
+    raise exception 'Uno de los pares ya no está en el catálogo. Recarga la página.';
+  end if;
+
+  v_grupo := public._codigo('WEB-', nextval('public.seq_pedido_web'), 3);
+  for p in select * from public.productos where id = any(p_productos) order by codigo loop
+    v_res := public._codigo('RES-', nextval('public.seq_reserva'), 3);
+    insert into public.reservas(id, producto_id, cliente_id, canal, vence, adelanto, estado, envio, obs, web, tipo_web, pedido_web, creado_por)
+    values (v_res, p.id, v_c, 'App VORTEX', now() + make_interval(hours => v_horas), 0, 'Por pagar', v_envio,
+            left(trim(coalesce(p_nota, '')), 300), true, 'Compra', v_grupo, null);
+  end loop;
+
+  perform public._audit(null, 'Pedido de la tienda en línea', v_grupo, format('Por pagar · %s par(es) · paquetería %s', n, v_destino));
+  return v_grupo;
+end $$;
+
+create or replace function public.cliente_mis_pedidos()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select coalesce(jsonb_agg(x order by x->>'creado' desc), '[]'::jsonb) from (
+    select jsonb_build_object(
+      'reserva', r.id, 'pedido', r.pedido_web, 'tipo', r.tipo_web, 'estado', r.estado, 'vence', r.vence,
+      'creado', r.creado_en, 'envio', r.envio, 'obs', case when r.estado = 'Cancelada' then r.obs else '' end,
+      'disponible', p.estado = 'Disponible',
+      'par', jsonb_build_object('codigo', p.codigo, 'marca', p.marca, 'modelo', p.modelo, 'talla', p.talla, 'cm', p.cm,
+             'color', p.color, 'precio', coalesce(vi.precio, p.precio),
+             'foto', (select f.ruta from public.producto_fotos f where f.producto_id = p.id order by f.orden, f.creado_en limit 1)),
+      'qr', case when q.id is not null and (r.estado in ('Activa', 'Por pagar') or (v.id is not null and v.estado = 'Activa' and not v.regalo
+                  and (select coalesce(sum(pg.monto), 0) from public.pagos pg where pg.venta_id = v.id and not pg.anulado)
+                    < (select coalesce(sum(i.precio), 0) from public.venta_items i where i.venta_id = v.id and i.activo)))
+             then jsonb_build_object('ruta', q.ruta, 'monto', q.monto, 'nombre', q.nombre) else null end,
+      -- QR por el TOTAL del pedido (o uno de monto libre) para pagar todo junto
+      'qr_total', case when r.estado = 'Por pagar' then (
+          select jsonb_build_object('ruta', qt.ruta, 'monto', qt.monto, 'nombre', qt.nombre, 'total', tt.total)
+            from (select coalesce(sum(pp.precio), 0) as total, count(*) as n
+                    from public.reservas r2 join public.productos pp on pp.id = r2.producto_id
+                   where r2.pedido_web = r.pedido_web and r2.cliente_id = r.cliente_id and r2.web
+                     and r2.estado = 'Por pagar' and pp.estado = 'Disponible') tt
+            join lateral (select q2.* from public.qr_pagos q2
+                           where q2.monto = tt.total or q2.monto is null
+                           order by (q2.monto is null), q2.creado_en desc limit 1) qt on true
+           where tt.n > 0) end,
+      'comprobante', (select jsonb_build_object('estado', cp.estado, 'motivo', cp.motivo, 'monto', cp.monto, 'creado', cp.creado_en,
+                                                'n', coalesce(array_length(cp.archivos, 1), 0))
+                        from public.comprobantes cp where cp.pedido_web = r.pedido_web and cp.cliente_id = r.cliente_id
+                       order by cp.creado_en desc limit 1),
+      'venta', case when v.id is null then null else jsonb_build_object(
+             'id', v.id, 'estado', v.estado, 'entrega', v.pedido, 'regalo', v.regalo,
+             'fecha_envio', v.entrega->>'fechaEstimada', 'guia', coalesce(v.entrega->>'guia', ''),
+             'total', (select coalesce(sum(i.precio), 0) from public.venta_items i where i.venta_id = v.id and i.activo),
+             'pagado', (select coalesce(sum(pg.monto), 0) from public.pagos pg where pg.venta_id = v.id and not pg.anulado)) end
+    ) as x
+    from public.reservas r
+    join public.productos p on p.id = r.producto_id
+    left join public.qr_pagos q on q.id = p.qr_id
+    left join public.ventas v on v.id = r.venta_id
+    left join public.venta_items vi on vi.venta_id = v.id and vi.producto_id = p.id and vi.activo
+    where r.web and r.cliente_id = public._mi_cliente()
+  ) t
+$$;
+
+
+grant execute on function public.cliente_pedir(uuid[], text, jsonb, text) to authenticated;
+grant execute on function public.cliente_mis_pedidos() to authenticated;
+
 -- Avisar a Supabase que hay funciones nuevas
 notify pgrst, 'reload schema';
 

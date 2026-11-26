@@ -369,6 +369,18 @@ export function crearAcciones({ db, me, recargar, toast }) {
       await recargar();
       return true;
     },
+    // Cambiar una foto ya subida por su versión recortada (mantiene su lugar y la portada)
+    async replacePhoto(productId, photo, file, codigo) {
+      const ruta = `${productId}/${Date.now()}-r.jpg`;
+      const up = await supabase.storage.from(BUCKET).upload(ruta, file, { contentType: "image/jpeg", upsert: false });
+      if (up.error) return fallo(up.error);
+      const ins = await supabase.from("producto_fotos").insert({ producto_id: productId, ruta, orden: photo.orden ?? 0 });
+      if (ins.error) { await supabase.storage.from(BUCKET).remove([ruta]); return fallo(ins.error); }
+      await supabase.from("producto_fotos").delete().eq("id", photo.id);
+      await supabase.storage.from(BUCKET).remove([photo.ruta]);
+      auditar("Recortó foto", codigo, "");
+      toast("Foto ajustada."); await recargar(); return true;
+    },
     async deletePhoto(photo, codigo) {
       const del = await supabase.from("producto_fotos").delete().eq("id", photo.id);
       if (del.error) return fallo(del.error);
