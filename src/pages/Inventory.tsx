@@ -363,12 +363,12 @@ export function ProductDrawer({ db, id, onClose, setModal, actions, userName, cl
             )}
             {visor && <PhotoViewer urls={p.photos.map((f) => f.url)} start={cur} title={`${p.codigo} · ${p.marca} ${p.modelo}`} onClose={() => setVisor(false)} />}
             {porRecortar.length > 0 && <RecortarVarias files={porRecortar} onTerminar={subirRecortadas} onCancelar={() => setPorRecortar([])} />}
-            {recortar && p.photos[cur] && <CropModal url={p.photos[cur].url} titulo="Recortar foto" onClose={() => setRecortar(false)} onDone={(f) => { setRecortar(false); const ph = p.photos[cur]; run(() => actions.replacePhoto(p.id, ph, f, p.codigo)); }} />}
+            {recortar && p.photos[cur] && <CropModal url={p.photos[cur].urlOriginal || p.photos[cur].url} titulo="Recortar foto" onClose={() => setRecortar(false)} onDone={(f) => { setRecortar(false); const ph = p.photos[cur]; run(() => actions.replacePhoto(p.id, ph, f, p.codigo)); }} />}
             {ajustarTodas && <AjustarFotosSubidas photos={p.photos} onTerminar={(cambios) => { setAjustarTodas(false); if (cambios.length) run(() => actions.replacePhotos(p.id, cambios, p.codigo)); }} />}
           </div>
           {(p.videos.length > 0 || can.inv) && p.estado !== "Eliminado" && <VideosDelPar p={p} actions={actions} can={can} />}
           {p.estado !== "Eliminado" && (
-            <Btn variant="lila" className="w-full" onClick={() => { onClose(); setModal({ type: "social", productId: p.id }); }}><Share2 size={15} /> Imagen para redes (precio, talla y cm)</Btn>
+            <Btn variant="lila" className="w-full" onClick={() => { onClose(); setModal({ type: "social", productId: p.id, foto: cur }); }}><Share2 size={15} /> Imagen para redes (precio, talla y cm)</Btn>
           )}
           {p.estado !== "Eliminado" && p.estado !== "Vendido" && <QrDelPar p={p} db={db} can={can} setModal={setModal} onClose={onClose} />}
           <div>
@@ -538,11 +538,11 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
 }
 
 /** Imagen para publicar en redes: la portada con precio, talla y cm escritos encima */
-export function SocialImageModal({ db, productId, onClose, toast }) {
+export function SocialImageModal({ db, productId, foto: fotoInicial = 0, onClose, toast }) {
   const p = db.products.find((x) => x.id === productId);
   const canvasRef = useRef(null);
   const fotoRef = useRef({ url: "", img: null });
-  const [fotoIdx, setFotoIdx] = useState(0);
+  const [fotoIdx, setFotoIdx] = useState(Math.min(fotoInicial || 0, Math.max(0, (p?.photos?.length || 1) - 1)));
   const [formato, setFormato] = useState("cuadrado");
   const [precio, setPrecio] = useState(p ? bs0(p.precio) : "");
   const [extra, setExtra] = useState("");
@@ -654,9 +654,12 @@ export function SocialImageModal({ db, productId, onClose, toast }) {
               </div>
             </div>
             {p.photos.length > 1 && (
-              <div className="flex gap-2 mt-2 overflow-x-auto vx-noscroll">
+              <div className="text-xs font-semibold text-slate-700 mt-3">¿Qué foto usar? ({fotoIdx + 1} de {p.photos.length})</div>
+            )}
+            {p.photos.length > 1 && (
+              <div className="flex gap-2 mt-1.5 overflow-x-auto vx-noscroll pb-1">
                 {p.photos.map((f, i) => (
-                  <button key={f.id} onClick={() => { setFotoIdx(i); setEncuadre(ENCUADRE_INICIAL); }} className={`relative w-14 h-11 shrink-0 rounded-md overflow-hidden border-2 ${fotoIdx === i ? "border-purple-700" : "border-transparent"}`} aria-label={i === 0 ? "Usar la portada" : `Usar la foto ${i + 1}`}>
+                  <button key={f.id} onClick={() => { setFotoIdx(i); setEncuadre(ENCUADRE_INICIAL); }} className={`relative w-20 h-20 shrink-0 rounded-lg overflow-hidden border-2 ${fotoIdx === i ? "border-purple-700 ring-2 ring-purple-200" : "border-slate-200"}`} aria-label={i === 0 ? "Usar la portada" : `Usar la foto ${i + 1}`} aria-pressed={fotoIdx === i}>
                     <img src={f.url} alt="" className="w-full h-full object-cover" />
                     {i === 0 && <span className="absolute top-0.5 left-0.5 bg-white rounded p-0.5"><Star size={9} className="text-amber-500" /></span>}
                   </button>
@@ -770,7 +773,7 @@ function AjustarFotosSubidas({ photos, onTerminar }) {
   const cambios = useRef([]);
   const siguiente = () => { if (n + 1 >= photos.length) onTerminar(cambios.current); else setN(n + 1); };
   return (
-    <CropModal key={photos[n].id} url={photos[n].url} titulo="Ajustar foto" paso={`Foto ${n + 1} de ${photos.length}${n === 0 ? " · portada" : ""}`}
+    <CropModal key={photos[n].id} url={photos[n].urlOriginal || photos[n].url} titulo="Ajustar foto" paso={`Foto ${n + 1} de ${photos.length}${n === 0 ? " · portada" : ""}`}
       onDone={(f) => { cambios.current = [...cambios.current, { photo: photos[n], file: f }]; siguiente(); }}
       onSkip={siguiente}
       onClose={() => onTerminar(cambios.current)} />

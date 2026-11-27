@@ -1,6 +1,7 @@
 import { useAtras } from "../lib/atras";
 import { useState, useEffect, useRef } from "react";
 import { Camera, ImagePlus, X, ChevronLeft, ChevronRight, RefreshCw, Check, ZoomIn } from "lucide-react";
+import { useBloquearScroll } from "../lib/bloqueo";
 
 const esMovil = () => {
   try { return window.matchMedia("(pointer: coarse)").matches; } catch { return false; }
@@ -37,6 +38,7 @@ export function PhotoPicker({ onFiles, disabled = false, compact = false, max = 
 
 /** Cámara dentro de la app (sobre todo para computadora con cámara web) */
 export function CameraModal({ onClose, onDone, onFallback, max = 8 }) {
+  useBloquearScroll(true);
   useAtras(true, onClose);
   const videoRef = useRef(null);
   const streamRef = useRef(null);
@@ -129,6 +131,7 @@ export function CameraModal({ onClose, onDone, onFallback, max = 8 }) {
 
 /** Ver las fotos completas en pantalla grande. Desliza o usa las flechas; doble toque para acercar. */
 export function PhotoViewer({ urls, start = 0, title = "", onClose }) {
+  useBloquearScroll(true);
   useAtras(true, onClose);
   const [i, setI] = useState(Math.min(start, Math.max(0, urls.length - 1)));
   const [acercada, setAcercada] = useState(false);

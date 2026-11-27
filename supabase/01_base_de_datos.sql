@@ -2436,6 +2436,102 @@ $$;
 grant execute on function public.cliente_pedir(uuid[], text, jsonb, text) to authenticated;
 grant execute on function public.cliente_mis_pedidos() to authenticated;
 
+-- =====================================================================
+--  PARES DUPLICADOS
+--  Elimina por completo (del inventario, del fardo y de todo) la copia SIN
+--  video de los pares que se registraron dos veces. Se considera la misma
+--  carga cuando coinciden fardo, marca, modelo, talla, color, cm, precio,
+--  categoría, origen y estado, y se registraron con menos de 6 horas de
+--  diferencia. Solo se borra si la copia no tiene reservas ni ventas.
+-- =====================================================================
+
+-- Fotos de pares eliminados desde aquí: la app las borra de la carpeta al abrirse
+create table if not exists public.archivos_por_borrar (
+  ruta      text primary key,
+  creado_en timestamptz not null default now()
+);
+alter table public.archivos_por_borrar enable row level security;
+drop policy if exists vx_leer on public.archivos_por_borrar;
+create policy vx_leer on public.archivos_por_borrar for select to authenticated using (public.tiene_rol(array['admin','inventario']));
+drop policy if exists vx_borrar on public.archivos_por_borrar;
+create policy vx_borrar on public.archivos_por_borrar for delete to authenticated using (public.tiene_rol(array['admin','inventario']));
+
+create or replace function public._mismo_par(a public.productos, b public.productos) returns boolean
+language sql immutable set search_path = public as $$
+  select a.id <> b.id
+     and a.lote_id = b.lote_id
+     and lower(trim(a.marca)) = lower(trim(b.marca))
+     and lower(trim(coalesce(a.modelo, ''))) = lower(trim(coalesce(b.modelo, '')))
+     and a.talla = b.talla
+     and lower(trim(coalesce(a.color, ''))) = lower(trim(coalesce(b.color, '')))
+     and a.precio = b.precio
+     and a.cm is not distinct from b.cm
+     and a.categoria is not distinct from b.categoria
+     and a.origen is not distinct from b.origen
+     and a.estado_fisico is not distinct from b.estado_fisico
+     and abs(extract(epoch from (a.creado_en - b.creado_en))) < 6 * 3600
+$$;
+
+do $$
+declare
+  d record;
+  v_borrados text[] := '{}';
+  v_revisar text[] := '{}';
+begin
+  perform set_config('vortex.interno', 'si', true);
+  for d in
+    select a.id, a.codigo, a.marca, a.modelo, min(b.codigo) as gemelo
+      from public.productos a
+      join public.productos b on public._mismo_par(a, b)
+     where a.estado = 'Disponible'
+       and b.estado <> 'Eliminado'
+       and not exists (select 1 from public.producto_videos v where v.producto_id = a.id)
+       and exists (select 1 from public.producto_videos v where v.producto_id = b.id)
+       and not exists (select 1 from public.reservas r where r.producto_id = a.id)
+       and not exists (select 1 from public.venta_items i where i.producto_id = a.id)
+     group by a.id, a.codigo, a.marca, a.modelo
+     order by a.codigo
+  loop
+    insert into public.archivos_por_borrar(ruta)
+      select ruta from public.producto_fotos where producto_id = d.id on conflict do nothing;
+    delete from public.productos where id = d.id;
+    perform public._audit(null, 'Eliminó par duplicado', d.codigo, d.marca || ' ' || coalesce(d.modelo, '') || ' — copia sin video de ' || d.gemelo);
+    v_borrados := v_borrados || (d.codigo || ' (copia de ' || d.gemelo || ')');
+  end loop;
+
+  -- Iguales pero ninguno tiene video: no se tocan, solo se avisan para revisarlos
+  select coalesce(array_agg(x order by x), '{}') into v_revisar from (
+    select distinct least(a.codigo, b.codigo) || ' y ' || greatest(a.codigo, b.codigo) as x
+      from public.productos a join public.productos b on public._mismo_par(a, b)
+     where a.estado <> 'Eliminado' and b.estado <> 'Eliminado'
+       and not exists (select 1 from public.producto_videos v where v.producto_id in (a.id, b.id))) t;
+
+  perform set_config('vortex.duplicados_borrados', array_to_string(v_borrados, ', '), false);
+  perform set_config('vortex.duplicados_revisar', array_to_string(v_revisar, ', '), false);
+end $$;
+
+-- =====================================================================
+--  FOTOS: SE GUARDA LA ORIGINAL
+--  Cada foto ajustada recuerda su versión original. Así se puede volver a
+--  ajustar las veces que quieras, siempre desde la original (sin perder calidad).
+-- =====================================================================
+
+alter table public.producto_fotos add column if not exists original text;
+
+-- Cuando una foto se elimina del todo, su original también se borra de la carpeta
+create or replace function public._foto_original_borrada() returns trigger
+language plpgsql security definer set search_path = public as $$
+begin
+  if old.original is not null and old.original <> old.ruta
+     and not exists (select 1 from public.producto_fotos f where f.original = old.original or f.ruta = old.original) then
+    insert into public.archivos_por_borrar(ruta) values (old.original) on conflict do nothing;
+  end if;
+  return old;
+end $$;
+drop trigger if exists vortex_foto_original on public.producto_fotos;
+create trigger vortex_foto_original after delete on public.producto_fotos
+for each row execute function public._foto_original_borrada();
+
 -- Avisar a Supabase que hay funciones nuevas
 notify pgrst, 'reload schema';
 

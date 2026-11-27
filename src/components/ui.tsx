@@ -1,4 +1,5 @@
 import { useAtras } from "../lib/atras";
+import { useBloquearScroll, useAreaVisible } from "../lib/bloqueo";
 import { useState, useRef } from "react";
 import { X, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { C } from "../lib/utils";
@@ -92,16 +93,36 @@ export const Input = (p) => <input className={inputCls} {...p} />;
 export const Select = ({ options, ...p }) => <select className={inputCls} {...p}>{options.map((o) => typeof o === "string" ? <option key={o} value={o}>{o}</option> : <option key={o.value} value={o.value}>{o.label}</option>)}</select>;
 export function Modal({ title, onClose, children, footer, wide }) {
   useAtras(true, onClose);
+  useBloquearScroll(true);
+  const area = useAreaVisible();
+  const hoja = useRef(null);
+  const arrastre = useRef(null);
+  // En el celular: deslizar hacia abajo desde la barra de arriba cierra la ventana (sin recargar la página)
+  const inicio = (e) => { arrastre.current = { y: e.touches[0].clientY, dy: 0 }; if (hoja.current) hoja.current.style.transition = "none"; };
+  const mover = (e) => {
+    const a = arrastre.current; if (!a) return;
+    a.dy = Math.max(0, e.touches[0].clientY - a.y);
+    if (hoja.current) hoja.current.style.transform = `translateY(${a.dy}px)`;
+  };
+  const fin = () => {
+    const a = arrastre.current; arrastre.current = null;
+    const el = hoja.current; if (!el) return;
+    el.style.transition = "transform .2s ease";
+    if (a && a.dy > 90) { el.style.transform = "translateY(100%)"; setTimeout(onClose, 160); }
+    else el.style.transform = "";
+  };
   return (
-    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900 bg-opacity-40 p-0 sm:p-4" onClick={onClose}>
-      <div className={`bg-white w-full ${wide ? "sm:max-w-2xl" : "sm:max-w-lg"} rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col`} style={{ maxHeight: "92vh" }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
-        <div className="sm:hidden flex justify-center pt-2"><span className="w-10 h-1 rounded-full bg-slate-300" /></div>
-        <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
-          <h2 className="vx-d font-semibold text-slate-900">{title}</h2>
-          <button onClick={onClose} className="p-1 rounded-md text-slate-400 hover:bg-slate-100" aria-label="Cerrar"><X size={18} /></button>
+    <div className="fixed left-0 right-0 z-50 flex items-end sm:items-center justify-center bg-slate-900 bg-opacity-40 p-0 sm:p-4" style={{ top: area.arriba, height: area.alto }} onClick={onClose}>
+      <div ref={hoja} className={`bg-white w-full ${wide ? "sm:max-w-2xl" : "sm:max-w-lg"} rounded-t-2xl sm:rounded-2xl shadow-xl flex flex-col`} style={{ maxHeight: "94%" }} onClick={(e) => e.stopPropagation()} role="dialog" aria-label={title}>
+        <div className="shrink-0" style={{ touchAction: "none" }} onTouchStart={inicio} onTouchMove={mover} onTouchEnd={fin} onTouchCancel={fin}>
+          <div className="sm:hidden flex justify-center pt-2"><span className="w-10 h-1 rounded-full bg-slate-300" /></div>
+          <div className="flex items-center justify-between px-4 sm:px-5 py-3 sm:py-4 border-b border-slate-100">
+            <h2 className="vx-d font-semibold text-slate-900 truncate pr-2">{title}</h2>
+            <button onClick={onClose} className="p-1 rounded-md text-slate-400 hover:bg-slate-100" aria-label="Cerrar"><X size={18} /></button>
+          </div>
         </div>
-        <div className="p-4 sm:p-5 overflow-y-auto space-y-4">{children}</div>
-        {footer && <div className="vx-safe-b px-4 sm:px-5 py-3 border-t border-slate-100 flex flex-wrap justify-end gap-2">{footer}</div>}
+        <div className="p-4 sm:p-5 overflow-y-auto overscroll-contain space-y-4 min-h-0">{children}</div>
+        {footer && <div className="vx-safe-b shrink-0 px-4 sm:px-5 py-3 border-t border-slate-100 flex flex-wrap justify-end gap-2">{footer}</div>}
       </div>
     </div>
   );

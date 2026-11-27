@@ -51,7 +51,7 @@ export async function cargarTodo(esAdmin: boolean) {
   if ((auditoria as any).error) throw (auditoria as any).error;
 
   const fotosPor = {};
-  fotos.forEach((f) => { (fotosPor[f.producto_id] = fotosPor[f.producto_id] || []).push({ id: f.id, ruta: f.ruta, url: fotoUrl(f.ruta), orden: f.orden }); });
+  fotos.forEach((f) => { (fotosPor[f.producto_id] = fotosPor[f.producto_id] || []).push({ id: f.id, ruta: f.ruta, url: fotoUrl(f.ruta), orden: f.orden, original: f.original || "", urlOriginal: f.original ? fotoUrl(f.original) : "" }); });
   const videosPor = {};
   (videos as any[]).forEach((v) => { (videosPor[v.producto_id] = videosPor[v.producto_id] || []).push({ id: v.id, ruta: v.ruta, url: fotoUrl(v.ruta), portada: v.portada || "", portadaUrl: v.portada ? fotoUrl(v.portada) : "", duracion: v.duracion == null ? null : num(v.duracion) }); });
   const itemsPor = {};
@@ -390,10 +390,18 @@ export function crearAcciones({ db, me, recargar, toast }) {
         const ruta = `${productId}/${Date.now()}-${n}-r.jpg`;
         const up = await supabase.storage.from(BUCKET).upload(ruta, file, { contentType: "image/jpeg", upsert: false });
         if (up.error) { fallo(up.error); break; }
-        const ins = await supabase.from("producto_fotos").insert({ producto_id: productId, ruta, orden: photo.orden ?? 0 });
+        // Se guarda cuál es la foto original para poder volver a ajustarla las veces que quieras sin perder calidad
+        let original = photo.original || photo.ruta;
+        let ins = await supabase.from("producto_fotos").insert({ producto_id: productId, ruta, orden: photo.orden ?? 0, original });
+        if (ins.error && /original/.test(String(ins.error.message || ""))) {
+          // La base de datos todavía no tiene la columna "original": se ajusta como antes
+          original = null;
+          ins = await supabase.from("producto_fotos").insert({ producto_id: productId, ruta, orden: photo.orden ?? 0 });
+        }
         if (ins.error) { await supabase.storage.from(BUCKET).remove([ruta]); fallo(ins.error); break; }
         await supabase.from("producto_fotos").delete().eq("id", photo.id);
-        await supabase.storage.from(BUCKET).remove([photo.ruta]);
+        // La versión anterior se borra; la original se conserva
+        if (photo.ruta !== original) await supabase.storage.from(BUCKET).remove([photo.ruta]);
         n++;
       }
       if (n) { auditar("Ajustó fotos", codigo, `${n} foto(s)`); toast(n === 1 ? "Foto ajustada." : `${n} fotos ajustadas.`); }
@@ -406,7 +414,7 @@ export function crearAcciones({ db, me, recargar, toast }) {
     async deletePhoto(photo, codigo) {
       const del = await supabase.from("producto_fotos").delete().eq("id", photo.id);
       if (del.error) return fallo(del.error);
-      await supabase.storage.from(BUCKET).remove([photo.ruta]);
+      await supabase.storage.from(BUCKET).remove([photo.ruta, photo.original].filter(Boolean));
       auditar("Eliminó foto", codigo, "");
       toast("Foto eliminada."); await recargar(); return true;
     },

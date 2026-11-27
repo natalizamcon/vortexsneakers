@@ -11,6 +11,7 @@ import { Logo, Isotipo, Btn, Field, Input, Select, inputCls, Modal, PasswordInpu
 import { PhotoViewer } from "../components/photos";
 import { fijarAvisoSalir, usePaginaAtras } from "../lib/atras";
 import { VideoThumb, VideoPlayer } from "../components/videos";
+import { Carrusel } from "../components/carrusel";
 
 const BOLSA_KEY = "vx-bolsa";
 const leer = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -18,8 +19,8 @@ const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } 
 
 // Solo dos formas de entrega, siempre por paquetería
 const ENTREGAS = [
-  { k: "cochabamba", titulo: "Paquetería en Cochabamba", desc: "Lo dejamos en una paquetería de Cochabamba y lo recoges ahí.", icon: Package },
-  { k: "envio", titulo: "Envío a otro departamento", desc: "Lo enviamos por encomienda a tu departamento, ciudad o provincia de Bolivia.", icon: Truck },
+  { k: "cochabamba", titulo: "Paquetería en Cochabamba", desc: "Lo recoges en la paquetería.", icon: Package },
+  { k: "envio", titulo: "Envío a otro departamento", desc: "Por encomienda a tu ciudad.", icon: Truck },
 ];
 const ZONAS = ["Cercado", "Sacaba", "Quillacollo", "Tiquipaya", "Colcapirhua", "Vinto", "Sipe Sipe", ...DEPARTAMENTOS];
 
@@ -125,11 +126,17 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
     setBolsa([...bolsa, p.id]);
   };
   const comprarYa = (p) => { setDetalle(null); setDirecto(p.id); };
+  const hayBarra = (bolsa.length > 0 && !bolsaAbierta && !directo) || (!!cuenta && vista === "catalogo" && bolsa.length === 0);
+  const irAlInicio = () => {
+    setDetalle(null); setVisor(null); setBolsaAbierta(false); setDirecto(null);
+    setVista("catalogo"); setQ(""); setTalla(""); setCategoria("Todas");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const salir = async () => { setCuentaAbierta(false); await supabase.auth.signOut(); };
   const pDetalle = detalle && (cat || []).find((p) => p.id === detalle);
 
   return (
-    <div className="vx min-h-screen bg-slate-50 text-slate-800">
+    <div className="vx min-h-[100dvh] flex flex-col bg-slate-50 text-slate-800">
       <header className="sticky top-0 z-30 bg-white border-b border-slate-200 vx-safe-t">
         {vistaPrevia && (
           <div className="vx-grad text-white">
@@ -141,7 +148,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
           </div>
         )}
         <div className="max-w-6xl mx-auto h-16 px-3 sm:px-6 flex items-center gap-2">
-          <button onClick={() => setVista("catalogo")} aria-label="Ir al catálogo"><Logo /></button>
+          <button onClick={irAlInicio} aria-label="Ir al inicio"><Logo /></button>
           <nav className="ml-auto flex items-center gap-1 sm:gap-2">
             {cuenta && (
               <button onClick={() => setVista(vista === "pedidos" ? "catalogo" : "pedidos")} className={`hidden sm:inline-flex px-3 py-2 rounded-lg text-sm font-medium ${vista === "pedidos" ? "bg-purple-50 text-purple-700" : "text-slate-600 hover:bg-slate-100"}`}>Mis pedidos</button>
@@ -168,14 +175,14 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
           <section className="bg-slate-900 text-white relative overflow-hidden">
             <div className="absolute -right-10 -bottom-16 w-72 h-72 opacity-25 pointer-events-none"><Isotipo className="w-full h-full" /></div>
             <div className="relative max-w-6xl mx-auto px-4 sm:px-6 py-6 sm:py-10">
-              <p className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-cyan-300 mb-2"><MapPin size={14} /> Somos de Cochabamba, Bolivia</p>
-              <h1 className="vx-d text-2xl sm:text-5xl font-extrabold leading-tight max-w-2xl">Cada par es único. Se lo lleva el primero que paga.</h1>
-              <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-300 max-w-xl">Tenis seleccionados en excelente estado. Recógelos en una paquetería de Cochabamba o te los enviamos a cualquier departamento de Bolivia.</p>
+              <p className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-cyan-300 mb-2"><MapPin size={14} /> Cochabamba, Bolivia</p>
+              <h1 className="vx-d text-2xl sm:text-5xl font-extrabold leading-tight max-w-2xl">Cada par es único.</h1>
+              <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-300 max-w-xl">Tenis en excelente estado. Envíos a todo Bolivia.</p>
               {cat && <p className="mt-4 text-sm text-cyan-300 font-semibold">{cat.length} pares disponibles ahora</p>}
             </div>
           </section>
 
-          <main className="max-w-6xl mx-auto px-3 sm:px-6 py-5 pb-28">
+          <main className="max-w-6xl mx-auto px-3 sm:px-6 py-5 pb-8">
             <div className="flex flex-col sm:flex-row gap-2 mb-3">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
@@ -212,14 +219,9 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
                 {lista.map((p) => (
                   <article key={p.id} className="bg-white rounded-xl border border-slate-200 overflow-hidden flex flex-col">
                     <div className="relative aspect-square vx-photo">
-                      <button className="absolute inset-0" onClick={() => setDetalle(p.id)} aria-label={`Ver ${p.marca} ${p.modelo}`}><ProductPhoto p={p} /></button>
+                      <div className="absolute inset-0"><Carrusel fotos={p.photos} alt={`${p.marca} ${p.modelo}`} onTap={() => setDetalle(p.id)} vacio={<button className="w-full h-full" onClick={() => setDetalle(p.id)} aria-label={`Ver ${p.marca} ${p.modelo}`}><ProductPhoto p={p} /></button>} /></div>
                       {p.videos.length > 0 && <span className="absolute top-2 right-2 pointer-events-none flex items-center gap-1 text-xs font-semibold text-white bg-slate-900/75 rounded-md px-2 py-0.5"><Play size={11} className="fill-white" /> Video</span>}
-                      {p.photos.length > 0 && (
-                        <button onClick={() => setVisor(p)} className="absolute bottom-2 right-2 flex items-center gap-1 text-xs font-semibold text-slate-800 bg-white rounded-md px-2 py-1 shadow" aria-label={`Ver fotos de ${p.marca} ${p.modelo}`}>
-                          <ZoomIn size={13} /> {p.photos.length > 1 ? `${p.photos.length} fotos` : "Foto"}
-                        </button>
-                      )}
-                      {enBolsa(p.id) && <span className="absolute top-2 left-2 flex items-center gap-1 text-xs font-semibold bg-purple-700 text-white rounded-md px-2 py-0.5"><Check size={12} /> En tu carrito</span>}
+                      {enBolsa(p.id) && <span className="absolute top-2 left-2 pointer-events-none flex items-center gap-1 text-xs font-semibold bg-purple-700 text-white rounded-md px-2 py-0.5"><Check size={12} /> En tu carrito</span>}
                     </div>
                     <button className="text-left px-3 pt-2.5 flex-1" onClick={() => setDetalle(p.id)}>
                       <div className="text-sm font-semibold text-slate-900 truncate">{p.marca} {p.modelo}</div>
@@ -240,17 +242,19 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
         </>
       )}
 
-      <footer className="border-t border-slate-200 bg-white">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-6 pb-24 sm:pb-6 flex flex-col sm:flex-row gap-2 justify-between text-xs text-slate-500">
-          <span className="flex items-center gap-1"><MapPin size={12} /> VORTEX SNEAKERS · Cochabamba, Bolivia · Envíos a todo el país{cfg.whatsapp ? ` · WhatsApp ${cfg.whatsapp}` : ""}</span>
+      <footer className="mt-auto border-t border-slate-200 bg-white">
+        <div className={`max-w-6xl mx-auto px-4 sm:px-6 py-5 ${hayBarra ? "pb-28" : "pb-8"} sm:pb-6 flex flex-col sm:flex-row gap-2 justify-between text-xs text-slate-500`}>
+          <span className="flex items-center gap-1"><MapPin size={12} /> VORTEX SNEAKERS · Cochabamba, Bolivia{cfg.whatsapp ? ` · WhatsApp ${cfg.whatsapp}` : ""}</span>
           {!cuenta && !vistaPrevia && <button className="text-left sm:text-right underline" onClick={() => setAuth({ modo: "entrar", motivo: "Si eres parte del equipo, entra con tu correo de trabajo." })}>¿Eres parte del equipo? Ingresa aquí</button>}
         </div>
       </footer>
 
       {/* Barra inferior en el celular */}
       {bolsa.length > 0 && !bolsaAbierta && !directo && (
-        <div className="sm:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 p-3 vx-safe-b">
-          <Btn className="w-full py-3" onClick={() => setBolsaAbierta(true)}><ShoppingBag size={17} /> Ver mi carrito · {bolsa.length} par{bolsa.length === 1 ? "" : "es"} · {bs0((cat || []).filter((p) => bolsa.includes(p.id)).reduce((a, p) => a + p.precio, 0))}</Btn>
+        <div className="sm:hidden fixed bottom-0 inset-x-0 z-30 bg-white border-t border-slate-200 px-3 pt-3 pb-3 vx-safe-b">
+          <button onClick={() => setBolsaAbierta(true)} className="w-full flex items-center justify-center gap-2 rounded-xl py-3.5 mb-1 text-[15px] font-bold shadow-lg active:scale-[.99] transition" style={{ background: "#08BFC5", color: "#10142C" }}>
+            <ShoppingBag size={18} /> Ver mi carrito · {bolsa.length} par{bolsa.length === 1 ? "" : "es"} · {bs0((cat || []).filter((p) => bolsa.includes(p.id)).reduce((a, p) => a + p.precio, 0))}
+          </button>
         </div>
       )}
       {cuenta && vista === "catalogo" && bolsa.length === 0 && (
@@ -294,9 +298,8 @@ function DetallePar({ p, enBolsa, onAlternar, onComprar, onFotos, onClose }) {
       <div className="grid sm:grid-cols-2 gap-4">
         <div>
           <div className="relative aspect-square rounded-xl overflow-hidden vx-photo">
-            <ProductPhoto p={p} idx={i} fit="contain" />
-            {p.photos[i] && <button className="absolute inset-0 cursor-zoom-in" onClick={() => onFotos(i)} aria-label="Ver la foto en pantalla completa" />}
-            {p.photos[i] && <span className="absolute top-2 right-2 pointer-events-none flex items-center gap-1 text-xs font-semibold bg-white text-slate-800 rounded-md px-2 py-1 shadow"><ZoomIn size={13} /> Ampliar</span>}
+            <Carrusel fotos={p.photos} alt={`${p.marca} ${p.modelo}`} fit="contain" indice={i} onIndice={setI} onTap={(n) => onFotos(n)} vacio={<ProductPhoto p={p} />} />
+            {p.photos[i] && <span className="absolute top-2 right-2 pointer-events-none flex items-center gap-1 text-xs font-semibold bg-white text-slate-800 rounded-md px-2 py-1 shadow"><ZoomIn size={13} /> Toca para ampliar</span>}
           </div>
           {(p.photos.length > 1 || p.videos.length > 0) && (
             <div className="flex gap-2 mt-2 overflow-x-auto vx-noscroll">
@@ -397,11 +400,11 @@ function Bolsa({ directo = false, pares, cfg, cuenta, onQuitar, onClose, onNeces
           )}
           <div className="grid sm:grid-cols-2 gap-3">
             <Field label="Nombre de quien recoge"><Input value={recibe} maxLength={100} autoComplete="name" placeholder="Nombre completo" onChange={(e) => setRecibe(e.target.value)} /></Field>
-            <Field label="Carnet de identidad (CI)" hint="Te lo pedirán en la paquetería para entregarte."><Input value={ci} maxLength={30} placeholder="Ej.: 1234567 CB" onChange={(e) => setCi(e.target.value)} /></Field>
+            <Field label="Carnet de identidad (CI)" hint="Te lo pedirán al recoger."><Input value={ci} maxLength={30} placeholder="Ej.: 1234567 CB" onChange={(e) => setCi(e.target.value)} /></Field>
           </div>
           <Field label="Nota para nosotros (opcional)"><Input value={nota} maxLength={300} placeholder="Algo que debamos saber" onChange={(e) => setNota(e.target.value)} /></Field>
-          <div className="rounded-xl bg-purple-50 p-3 text-xs text-purple-900 flex gap-2"><QrCode size={16} className="shrink-0 text-purple-700" /><span>Al tocar <b>Comprar</b> pasas directo a pagar con el QR. <b>No apartamos pares:</b> se lo lleva quien pague primero y suba su comprobante. Cuando verifiquemos el pago, te avisamos la fecha de envío.{modo === "envio" ? " El costo de la encomienda lo pagas al recoger." : ""}</span></div>
-          {!cuenta && <div className="rounded-xl bg-cyan-50 p-3 text-sm text-cyan-900 flex gap-2"><User size={16} className="shrink-0 mt-0.5" /> Para comprar necesitas una cuenta. Te pediremos tu nombre, teléfono y correo; tus pares siguen guardados.</div>}
+          <div className="rounded-xl bg-purple-50 p-3 text-xs text-purple-900 flex gap-2"><QrCode size={16} className="shrink-0 text-purple-700" /><span>Pagas con QR. Se lo lleva quien pague primero.{modo === "envio" ? " La encomienda se paga al recoger." : ""}</span></div>
+          {!cuenta && <div className="rounded-xl bg-cyan-50 p-3 text-sm text-cyan-900 flex gap-2"><User size={16} className="shrink-0 mt-0.5" /> Para comprar, crea tu cuenta. Tus pares siguen guardados.</div>}
           {falta && pares.length > 0 && <p className="text-xs text-amber-700">{falta}</p>}
           <Contacto cfg={cfg} pedido="" mensaje={`Hola VORTEX SNEAKERS, tengo una duda sobre ${pares.map((p) => `${p.marca} ${p.modelo} (${p.codigo})`).join(", ")}.`} texto="¿Tienes alguna duda? Escríbenos" />
         </>
@@ -679,7 +682,7 @@ function MisPedidos({ onVolver, toast, recargarCatalogo, cfg, destacar = "" }) {
   });
   const subido = async () => { await cargar(); recargarCatalogo(); };
   return (
-    <main className="max-w-3xl mx-auto px-3 sm:px-6 py-6 pb-28">
+    <main className="max-w-3xl mx-auto px-3 sm:px-6 py-6 pb-8">
       <div className="flex items-center justify-between mb-4">
         <h1 className="vx-d text-2xl font-bold text-slate-900">Mis pedidos</h1>
         <Btn variant="outline" size="sm" onClick={onVolver}>Ver catálogo</Btn>
@@ -739,14 +742,14 @@ function MisPedidos({ onVolver, toast, recargarCatalogo, cfg, destacar = "" }) {
                   </div>
                 )}
                 <div className="px-4 py-3 border-t border-slate-100 space-y-3 empty:hidden">
-                  {enRevision && <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-900 flex gap-2"><Clock size={16} className="shrink-0 mt-0.5" /><span><b>Pago en revisión.</b> Recibimos {comp.n > 1 ? `${comp.n} comprobantes` : "tu comprobante"}{comp.monto ? ` (total ${bs0(comp.monto)})` : ""}. Tus pares ya están apartados para ti.</span></div>}
+                  {enRevision && <div className="rounded-xl bg-amber-50 border border-amber-200 px-3 py-2.5 text-sm text-amber-900 flex gap-2"><Clock size={16} className="shrink-0 mt-0.5" /><span><b>Pago en revisión.</b> Tus pares ya están apartados.</span></div>}
                   {enRevision && (comp.n || 0) < 6 && <AgregarComprobante pedido={k} toast={toast} onListo={cargar} />}
-                  {rechazado && <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2.5 text-sm text-rose-800 flex gap-2"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><span><b>No pudimos aprobar tu pago:</b> {comp.motivo}. Los pares volvieron al catálogo.</span></div>}
-                  {v && comp?.estado === "Aprobado" && <div className="rounded-xl bg-cyan-50 border border-cyan-200 px-3 py-2.5 text-sm text-cyan-900 flex gap-2"><CheckCircle2 size={16} className="shrink-0 mt-0.5" /><span><b>¡Pago aprobado!</b> Tu compra está confirmada. Aquí verás cada paso de tu envío.</span></div>}
+                  {rechazado && <div className="rounded-xl bg-rose-50 border border-rose-200 px-3 py-2.5 text-sm text-rose-800 flex gap-2"><AlertTriangle size={16} className="shrink-0 mt-0.5" /><span><b>Pago no aprobado:</b> {comp.motivo}.</span></div>}
+                  {v && comp?.estado === "Aprobado" && <div className="rounded-xl bg-cyan-50 border border-cyan-200 px-3 py-2.5 text-sm text-cyan-900 flex gap-2"><CheckCircle2 size={16} className="shrink-0 mt-0.5" /><span><b>¡Pago aprobado!</b> Aquí verás tu envío.</span></div>}
                   {(enRevision || rechazado || (v && comp)) && <Contacto cfg={cfg} pedido={k} texto={rechazado ? "Escríbenos" : "¿Dudas sobre tu pedido? Escríbenos"} />}
                   {porPagar.length > 0 && !enRevision && (libres.length ? (
                     <>
-                      <p className="text-xs text-slate-600 flex items-start gap-1"><AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-600" /> Los pares no están apartados: se los lleva quien pague primero. Paga y sube tu comprobante cuanto antes (este pedido se cancela el {ftime(est.vence)}).</p>
+                      <p className="text-xs text-slate-600 flex items-start gap-1"><AlertTriangle size={12} className="mt-0.5 shrink-0 text-amber-600" /> Se lo lleva quien pague primero. Paga antes del {ftime(est.vence)}.</p>
                       {(() => {
                         const qt = libres[0]?.qr_total;
                         const sinQr = libres.some((x) => !x.qr);

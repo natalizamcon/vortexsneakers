@@ -171,3 +171,20 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 
 - En el celular, el botón **atrás** cierra la ventana abierta o vuelve a la página anterior; en la página de inicio hay que presionarlo dos veces seguidas para salir.
 - Al subir fotos se abre **Ajustar foto**: elige la forma (cuadrada, vertical, horizontal u original), acerca con los dedos o la barra, mueve la foto dentro del marco y gírala. Para las fotos **ya subidas**, abre la ficha del par y toca **Ajustar tamaño de esta foto** o **Ajustar todas** (te las muestra una por una; “Usar sin recortar” deja esa como está).
+
+## Pares duplicados
+
+- Al guardar un par nuevo con video, la app revisa el video **antes** de guardar: si el video no sirve, no se guarda nada y puedes corregirlo.
+- Si el par se guardó pero un video no se pudo subir, te lo dice: agrega el video desde la ficha del par, **no vuelvas a crear el par**.
+- Mientras se guarda no se puede cerrar la ventana, y un doble toque ya no guarda dos veces.
+- Si registras un par igual a otro del mismo fardo registrado ese día, la app te pregunta si de verdad es otro par.
+- La tienda busca también por **cm** (ej.: “27”, “27,5 cm”, “27cm”) y por talla (“talla 42”).
+
+## Tienda en el celular
+
+- Las fotos se deslizan con el dedo (carrusel con puntitos), en el catálogo y en el detalle del par.
+- Con una ventana abierta, la página de atrás ya no se mueve. La ventana se cierra deslizándola hacia abajo desde su barra de arriba (sin recargar la página).
+- Al escribir, la ventana se acomoda arriba del teclado.
+- El logo lleva al inicio del catálogo.
+- Las fotos se pueden ajustar las veces que quieras: siempre se parte de la foto original, sin perder calidad.
+- En “Imagen para redes” eliges qué foto usar (empieza con la que estabas viendo en la ficha).

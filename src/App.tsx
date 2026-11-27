@@ -383,7 +383,7 @@ function Sistema({ perfil }) {
       {modal?.type === "lot" && <LotModal {...ctx} edit={modal.edit || null} onClose={() => setModal(null)} />}
       {modal?.type === "provider" && <ProviderModal {...ctx} edit={modal.edit} onClose={() => setModal(null)} />}
       {modal?.type === "editSale" && <EditSaleModal {...ctx} ventaId={modal.ventaId} onClose={() => setModal(null)} />}
-      {modal?.type === "social" && <SocialImageModal {...ctx} productId={modal.productId} onClose={() => setModal(null)} />}
+      {modal?.type === "social" && <SocialImageModal {...ctx} productId={modal.productId} foto={modal.foto} onClose={() => setModal(null)} />}
       {modal?.type === "deleteProducts" && <DeleteProductsModal {...ctx} ids={modal.ids} onDone={modal.onDone} onClose={() => setModal(null)} />}
       {modal?.type === "revisarPago" && <RevisarPagoModal {...ctx} comprobanteId={modal.comprobanteId} onClose={() => setModal(null)} />}
       {modal?.type === "qrManager" && <QrManagerModal {...ctx} onClose={() => setModal(null)} />}

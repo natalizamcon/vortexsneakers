@@ -3,6 +3,10 @@
 @tailwind utilities;
 
 html { -webkit-text-size-adjust: 100%; }
+/* Nada se mueve hacia los costados */
+html, body { overflow-x: clip; max-width: 100%; }
+/* Con una ventana abierta: la página de atrás queda quieta y no se recarga al jalar */
+html.vx-bloqueado, html.vx-bloqueado body { overscroll-behavior: none; }
 body { margin: 0; background: #f8fafc; color: #1e293b; font-family: "Montserrat", system-ui, sans-serif; }
 
 .vx { font-family: "Montserrat", system-ui, sans-serif; -webkit-tap-highlight-color: transparent; }

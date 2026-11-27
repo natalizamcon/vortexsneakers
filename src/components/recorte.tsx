@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { X, Check, RotateCw, Crop } from "lucide-react";
 import { useAtras } from "../lib/atras";
+import { useBloquearScroll } from "../lib/bloqueo";
 
 export const FORMAS = [
   { k: "1:1", label: "Cuadrada", r: 1 },
@@ -26,6 +27,7 @@ async function abrirImagen(src): Promise<HTMLImageElement> {
  * onDone(blob) entrega la foto recortada (JPEG). onSkip: usar la foto tal cual.
  */
 export function CropModal({ file = null, url = "", titulo = "Ajustar foto", paso = "", onDone, onSkip = null, onClose }) {
+  useBloquearScroll(true);
   useAtras(true, onClose);
   const marcoRef = useRef(null);
   const imgRef = useRef(null);
