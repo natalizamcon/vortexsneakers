@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from "react";
 import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3, Shield, Settings, Search, Plus, X, Menu, Bell, LogOut, LayoutGrid, List, Clock, CheckCircle2, AlertTriangle, Boxes, Receipt, History, Camera, Phone, MapPin, Lock, Download, FileText, Layers, UserPlus, CreditCard, Ban, Upload, ChevronRight, Eye, EyeOff, Building2, CalendarDays, BellRing, ChevronLeft, Pencil, Trash2, MoreHorizontal, KeyRound, Printer, RefreshCw, ImagePlus, UserCog, Star, Share2, ArrowLeft, ArrowRight, ZoomIn, Gift, QrCode, CheckSquare, Play, Video, Crop } from "lucide-react";
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
-import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm, itemLista } from "../lib/utils";
+import { norm, C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV, fcm, itemLista } from "../lib/utils";
 import { FORMATOS, ENCUADRE_INICIAL, cargarFoto, dibujarImagen, lienzoABlob, descargarBlob } from "../lib/postImage";
 import { PhotoPicker, PhotoViewer } from "../components/photos";
 import { CropModal, RecortarVarias } from "../components/recorte";
@@ -439,6 +439,17 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
   const [recortarUno, setRecortarUno] = useState(null);
   const lot = db.lots.find((l) => l.id === p.lote);
   const cost = edit ? pCost(edit) : lot ? lotTotal(lot) / lot.pares : 0;
+  // Mientras se guarda (fotos y videos pueden tardar) no se cierra: así no se vuelve a crear el mismo par
+  const cerrar = () => { if (busy) { alert("Espera un momento: se está guardando el par con sus fotos y videos."); return; } onClose(); };
+  // Aviso si hoy ya se registró un par igual en el mismo fardo
+  const confirmarNoRepetido = () => {
+    const igual = (a, b) => norm(String(a || "")).trim() === norm(String(b || "")).trim();
+    const gemelo = db.products.find((x) => x.estado !== "Eliminado" && x.lote === p.lote && igual(x.marca, p.marca) && igual(x.modelo, p.modelo)
+      && Number(x.talla) === Number(p.talla) && igual(x.color, p.color) && Number(x.precio) === Number(p.precio)
+      && x.creado && Date.now() - Date.parse(x.creado) < 24 * 3600e3);
+    if (!gemelo) return true;
+    return confirm(`Ya registraste hoy un par igual en este fardo: ${gemelo.codigo} · ${gemelo.marca} ${gemelo.modelo} talla ${gemelo.talla}, ${gemelo.color}, ${bs0(gemelo.precio)}.\n\n¿Es otro par distinto? Toca Aceptar solo si de verdad es otro par.`);
+  };
   const previews = useMemo(() => files.map((f) => URL.createObjectURL(f)), [files]);
   useEffect(() => () => previews.forEach((u) => URL.revokeObjectURL(u)), [previews]);
   const colores = [...new Set([...COLORS.map((c) => c[0]), ...db.products.map((x) => x.color)].filter(Boolean))].sort((a, b) => a.localeCompare(b, "es"));
@@ -454,7 +465,7 @@ export function ProductModal({ db, onClose, actions, edit = null }) {
     );
   }
   return (
-    <Modal wide title={edit ? `Editar ${edit.codigo}` : "Nuevo par"} onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy || !ok} onClick={() => run(async () => { if (await actions.saveProduct(p, files, edit?.id || null, vids, setEstadoVideo)) onClose(); })}>{busy ? <Spinner /> : null} {busy && estadoVideo ? estadoVideo : edit ? "Guardar cambios" : "Agregar al inventario"}</Btn></>}>
+    <Modal wide title={edit ? `Editar ${edit.codigo}` : "Nuevo par"} onClose={cerrar} footer={<><Btn variant="ghost" disabled={busy} onClick={cerrar}>Cerrar</Btn><Btn disabled={busy || !ok} onClick={() => run(async () => { if (!edit && !confirmarNoRepetido()) return; if (await actions.saveProduct(p, files, edit?.id || null, vids, setEstadoVideo)) onClose(); })}>{busy ? <Spinner /> : null} {busy && estadoVideo ? estadoVideo : edit ? "Guardar cambios" : "Agregar al inventario"}</Btn></>}>
       <div className="grid sm:grid-cols-3 gap-4">
         <div>
           {previews.length ? (

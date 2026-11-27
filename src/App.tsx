@@ -5,7 +5,7 @@ import {
 } from "lucide-react";
 import { supabase, configurado, mensajeError } from "./lib/supabase";
 import { iniciarAtras, fijarAvisoSalir, cambiarUrl, useAtras, usePaginaAtras } from "./lib/atras";
-import { cargarTodo, crearAcciones, DB_VACIA } from "./lib/data";
+import { limpiarArchivosPendientes, cargarTodo, crearAcciones, DB_VACIA } from "./lib/data";
 import { computeMetrics, agendaEvents, reminderState, TIPOS_EVENTO, TODAY, fechaLarga, tick, ACCESO, permisos, ROLES } from "./lib/utils";
 import { Logo, Btn } from "./components/ui";
 import { Cargando, SinConfigurar, SinAcceso } from "./pages/Login";
@@ -221,6 +221,13 @@ function Sistema({ perfil }) {
   if (!acceso.includes(page)) page = inicio;
 
   const actions = useMemo(() => crearAcciones({ db, me, recargar, toast }), [db, me, recargar, toast]);
+  // Borra de la carpeta de fotos los archivos de pares que se eliminaron desde la base de datos
+  const limpiado = useRef(false);
+  useEffect(() => {
+    if (!cargado || limpiado.current || !can.inv) return;
+    limpiado.current = true;
+    limpiarArchivosPendientes();
+  }, [cargado, can.inv]);
   const m = useMemo(() => computeMetrics(db), [db]);
   const userName = (id) => db.users.find((u) => u.id === id)?.nombre || (id ? "Usuario" : "Sistema");
   const client = (id) => db.clients.find((c) => c.id === id);

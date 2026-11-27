@@ -97,10 +97,21 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   const tallas = useMemo(() => [...new Set((cat || []).map((p) => p.talla))].sort((a, b) => a - b), [cat]);
   const categorias = useMemo(() => ["Todas", ...new Set((cat || []).map((p) => p.categoria).filter(Boolean))], [cat]);
   const lista = useMemo(() => {
-    const palabras = norm(q).split(/\s+/).filter(Boolean);
+    // "27cm" → "27 cm"; "27,5" → "27.5"
+    const palabras = norm(q).replace(/(\d),(\d)/g, "$1.$2").replace(/(\d)\s*(cm|centimetros?)\b/g, "$1 cm").split(/\s+/).filter(Boolean);
+    const pideCm = palabras.some((w) => /^(cm|centimetros?|medida)$/.test(w));
+    const pideTalla = palabras.includes("talla");
+    const numeros = palabras.filter((w) => /^\d+(\.\d+)?$/.test(w));
+    // "27" encuentra 27 y 27,5 cm; "27,5" solo 27,5
+    const cmCoincide = (w, cm) => cm != null && (w.includes(".") ? cm === Number(w) : cm >= Number(w) && cm < Number(w) + 1);
+    const textos = palabras.filter((w) => !/^\d+(\.\d+)?$/.test(w) && !/^(cm|centimetros?|medida|talla)$/.test(w));
     let l = (cat || []).filter((p) => {
-      const t = norm(`${p.codigo} ${p.marca} ${p.modelo} ${p.color} ${p.categoria} talla ${p.talla}`);
-      return palabras.every((w) => t.includes(w)) && (!talla || String(p.talla) === talla) && (categoria === "Todas" || p.categoria === categoria);
+      const t = norm(`${p.codigo} ${p.marca} ${p.modelo} ${p.color} ${p.categoria}`);
+      const cm = p.cm == null || p.cm === "" ? null : Number(p.cm);
+      const tl = Number(p.talla);
+      const numOk = numeros.every((w) => (pideCm ? cmCoincide(w, cm) : pideTalla ? tl === Number(w) : tl === Number(w) || cmCoincide(w, cm) || t.split(/\s+/).includes(w)));
+      const cmOk = !pideCm || cm != null;
+      return textos.every((w) => t.includes(w)) && numOk && cmOk && (!talla || String(p.talla) === talla) && (categoria === "Todas" || p.categoria === categoria);
     });
     if (orden === "menor") l = [...l].sort((a, b) => a.precio - b.precio);
     if (orden === "mayor") l = [...l].sort((a, b) => b.precio - a.precio);
@@ -168,7 +179,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
             <div className="flex flex-col sm:flex-row gap-2 mb-3">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
-                <input className={inputCls + " pl-9"} placeholder="Busca por marca, modelo o color" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en el catálogo" />
+                <input className={inputCls + " pl-9"} placeholder="Busca por marca, modelo, color, talla o cm (ej.: 27,5 cm)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en el catálogo" />
               </div>
               <div className="grid grid-cols-2 gap-2 sm:w-80">
                 <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} options={categorias.map((c) => ({ value: c, label: c === "Todas" ? "Para todos" : c }))} aria-label="Categoría" />

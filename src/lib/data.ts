@@ -69,7 +69,7 @@ export async function cargarTodo(esAdmin: boolean) {
       return {
         id: p.id, codigo: p.codigo, lote: p.lote_id, marca: p.marca, modelo: p.modelo, origen: p.origen, categoria: p.categoria,
         talla: num(p.talla), cm: p.cm == null ? null : num(p.cm), color: p.color, hex: colorHex(p.color), estadoFisico: p.estado_fisico, descripcion: p.descripcion || "", obs: p.obs || "",
-        photos: ph, fotos: ph.length, videos: videosPor[p.id] || [], fechaIngreso: p.fecha_ingreso, costoCompra: num(p.costo_compra), costoTransporte: num(p.costo_transporte),
+        photos: ph, fotos: ph.length, videos: videosPor[p.id] || [], fechaIngreso: p.fecha_ingreso, creado: p.creado_en, costoCompra: num(p.costo_compra), costoTransporte: num(p.costo_transporte),
         precio: num(p.precio), estado: p.estado, socio: p.creado_por,
         bajaMotivo: p.baja_motivo || "", bajaEn: p.baja_en || null, bajaPor: p.baja_por || null, qrId: p.qr_id || null,
       };
@@ -125,13 +125,22 @@ export function crearAcciones({ db, me, recargar, toast }) {
   }
 
   // Sube videos: los reduce si pesan mucho, guarda una portada y los registra en el par
-  async function subirVideos(productId, files, onEstado = (_t: string) => {}) {
-    let n = 0;
+  // Revisa y reduce los videos ANTES de guardar nada (si uno no sirve, no se guarda el par a medias)
+  async function prepararVideos(files, onEstado = (_t: string) => {}) {
+    const listos = [];
     for (let i = 0; i < files.length; i++) {
       const pre = files.length > 1 ? `Video ${i + 1} de ${files.length}: ` : "";
-      let v;
-      try { v = await prepararVideo(files[i], (t) => onEstado(pre + t)); }
-      catch (e) { toast(e?.message || "No se pudo leer ese video.", "err"); continue; }
+      try { listos.push(await prepararVideo(files[i], (t) => onEstado(pre + t))); }
+      catch (e) { onEstado(""); toast(`${files.length > 1 ? `Video ${i + 1}: ` : ""}${e?.message || "No se pudo leer ese video."} No se guardó nada.`, "err"); return null; }
+    }
+    return listos;
+  }
+  async function subirVideos(productId, files, onEstado = (_t: string) => {}, preparados = null) {
+    let n = 0;
+    const lista = preparados || (await prepararVideos(files, onEstado)) || [];
+    for (let i = 0; i < lista.length; i++) {
+      const pre = lista.length > 1 ? `Video ${i + 1} de ${lista.length}: ` : "";
+      const v = lista[i];
       onEstado(pre + "Subiendo el video… puede tardar un poco");
       const base = `${productId}/videos/${Date.now()}-${i}`;
       const up = await supabase.storage.from(BUCKET).upload(`${base}.${v.ext}`, v.blob, { contentType: v.tipo, upsert: false });
@@ -275,6 +284,8 @@ export function crearAcciones({ db, me, recargar, toast }) {
       toast("Proveedor actualizado."); await recargar(); return true;
     },
     async saveProduct(p, files = [], id = null, vids = [], onEstado = (_t: string) => {}) {
+      const listos = vids.length ? await prepararVideos(vids, onEstado) : [];
+      if (!listos) return false; // un video no sirvió: no se guarda nada y la ventana sigue abierta
       const fila = {
         lote_id: p.lote, marca: p.marca.trim(), modelo: (p.modelo || "").trim(), origen: p.origen, categoria: p.categoria,
         talla: Number(p.talla), cm: String(p.cm ?? "").trim() === "" ? null : Number(String(p.cm).replace(",", ".")),
@@ -284,9 +295,12 @@ export function crearAcciones({ db, me, recargar, toast }) {
       const { data, error } = await q;
       if (error) return fallo(error);
       const subidas = files.length ? await subirFotos(data.id, files, id ? (prod(id)?.fotos || 0) : 0) : 0;
-      const nv = vids.length ? await subirVideos(data.id, vids, onEstado) : 0;
+      const nv = listos.length ? await subirVideos(data.id, [], onEstado, listos) : 0;
+      if (listos.length && nv < listos.length) {
+        toast(`${data.codigo} ${id ? "se actualizó" : "se guardó"}, pero ${listos.length - nv === 1 ? "un video no se pudo subir" : "algunos videos no se pudieron subir"}. Agrégalo desde la ficha del par (no vuelvas a crear el par).`, "err");
+      }
       auditar(id ? "Editó producto" : "Registró producto", data.codigo, `${data.marca} ${data.modelo} T${data.talla}${subidas ? ` · ${subidas} foto(s)` : ""}`);
-      toast(id ? `${data.codigo} actualizado${nv ? ` con ${nv} video(s) nuevo(s)` : ""}.` : `${data.codigo} agregado al inventario${subidas ? ` con ${subidas} foto(s)` : ""}${nv ? ` y ${nv} video(s)` : ""}.`);
+      if (!(listos.length && nv < listos.length)) toast(id ? `${data.codigo} actualizado${nv ? ` con ${nv} video(s) nuevo(s)` : ""}.` : `${data.codigo} agregado al inventario${subidas ? ` con ${subidas} foto(s)` : ""}${nv ? ` y ${nv} video(s)` : ""}.`);
       await recargar();
       return data.codigo;
     },
@@ -479,4 +493,16 @@ export function crearAcciones({ db, me, recargar, toast }) {
       toast("Tu contraseña se cambió."); return true;
     },
   };
+}
+
+/** Archivos (fotos y videos) de pares que la base de datos eliminó: se borran de la carpeta "productos". */
+export async function limpiarArchivosPendientes() {
+  try {
+    const { data, error } = await supabase.from("archivos_por_borrar").select("ruta").limit(500);
+    if (error || !data || !data.length) return;
+    const rutas = data.map((x) => x.ruta);
+    const r = await supabase.storage.from(BUCKET).remove(rutas);
+    if (r.error) return;
+    await supabase.from("archivos_por_borrar").delete().in("ruta", rutas);
+  } catch {}
 }

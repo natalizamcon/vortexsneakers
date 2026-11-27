@@ -1,5 +1,5 @@
 import { useAtras } from "../lib/atras";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { X, Lock, Eye, EyeOff, Loader2 } from "lucide-react";
 import { C } from "../lib/utils";
 
@@ -168,7 +168,13 @@ export function ProductPhoto({ p, className = "", idx = 0, fit = "cover" }) {
 /** Evita doble clic mientras se guarda algo */
 export function useBusy(): [boolean, (fn: () => Promise<any>) => Promise<void>] {
   const [busy, setBusy] = useState(false);
-  const run = async (fn) => { if (busy) return; setBusy(true); try { await fn(); } finally { setBusy(false); } };
+  // Candado inmediato: un doble toque rápido no ejecuta la acción dos veces (por ejemplo, guardar un par)
+  const ocupado = useRef(false);
+  const run = async (fn) => {
+    if (ocupado.current) return;
+    ocupado.current = true; setBusy(true);
+    try { await fn(); } finally { ocupado.current = false; setBusy(false); }
+  };
   return [busy, run];
 }
 
