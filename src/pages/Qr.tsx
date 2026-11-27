@@ -40,7 +40,7 @@ export function QrViewModal({ db, qrId, onClose, toast }) {
       {nav.share && <Btn variant="outline" disabled={busy} onClick={compartir}><Share2 size={15} /> Compartir</Btn>}
       <Btn disabled={busy} onClick={descargar}>{busy ? <Spinner /> : <Download size={15} />} Descargar</Btn>
     </>}>
-      <div className="rounded-xl bg-white border border-slate-200 p-3"><img src={q.url} alt={`QR de pago ${montoTxt(q)}`} className="w-full max-h-96 object-contain" /></div>
+      <div className="rounded-xl bg-white border border-slate-200 p-3"><img src={q.url} alt={`QR de pago ${montoTxt(q)}`} className="w-full h-auto object-contain" /></div>
       <div className="text-center"><div className="vx-d text-2xl font-bold">{montoTxt(q)}</div><div className="text-xs text-slate-500">Usado en {usos(db, q).length} par{usos(db, q).length === 1 ? "" : "es"}</div></div>
     </Modal>
   );
@@ -58,16 +58,14 @@ function NuevoQr({ montoInicial = "" as any, onCancel, onGuardar, busy }) {
   return (
     <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 space-y-3">
       <div className="text-sm font-semibold text-slate-900">Subir un QR nuevo</div>
-      <div className="flex gap-3 items-start">
-        <div className={`${url ? "w-40 h-40" : "w-28 h-28"} shrink-0 rounded-lg bg-white border border-slate-200 grid place-items-center overflow-hidden relative`}>
-          {url ? <button type="button" onClick={() => setVer(true)} className="w-full h-full" aria-label="Ver el QR en grande"><img src={url} alt="QR elegido" className="w-full h-full object-contain" /><span className="absolute bottom-1 right-1 text-[10px] font-semibold bg-slate-900/70 text-white rounded px-1">Ampliar</span></button> : <QrCode size={36} className="text-slate-300" />}
-          {ver && url && <PhotoViewer urls={[url]} title="QR elegido" onClose={() => setVer(false)} />}
-        </div>
-        <div className="flex-1 space-y-2">
-          <div className="flex gap-2 flex-wrap"><PhotoPicker compact max={1} onFiles={(fs) => fs[0] && setFile(fs[0])} /></div>
-          <p className="text-xs text-slate-500">Usa la imagen del QR que genera tu banco (captura o foto bien enfocada).</p>
-        </div>
-      </div>
+      <div className="flex gap-2 flex-wrap"><PhotoPicker compact max={1} onFiles={(fs) => fs[0] && setFile(fs[0])} /></div>
+      {url ? (
+        <button type="button" onClick={() => setVer(true)} className="relative block w-full rounded-lg bg-white border border-slate-200 overflow-hidden" aria-label="Ver el QR en grande">
+          <img src={url} alt="QR elegido (imagen completa)" className="w-full h-auto" />
+          <span className="absolute top-1.5 right-1.5 text-[11px] font-semibold bg-slate-900/75 text-white rounded px-1.5 py-0.5">Toca para ampliar</span>
+        </button>
+      ) : <p className="text-xs text-slate-500">Usa la imagen del QR que genera tu banco (captura completa, donde se vea el monto).</p>}
+      {ver && url && <PhotoViewer urls={[url]} title="QR elegido" onClose={() => setVer(false)} />}
       <div className="grid grid-cols-2 gap-3">
         <Field label="Monto del QR (Bs)" hint={montoOk ? "Déjalo vacío si el QR es de monto libre." : "Escribe un monto mayor a cero."}><Input type="number" inputMode="decimal" value={monto} placeholder="Ej.: 180" onChange={(e) => setMonto(e.target.value)} /></Field>
         <Field label="Nombre (opcional)"><Input value={nombre} placeholder={monto ? `QR Bs ${monto}` : "Ej.: QR BNB"} maxLength={60} onChange={(e) => setNombre(e.target.value)} /></Field>
@@ -177,10 +175,12 @@ export function QrManagerModal({ db, actions, onClose, toast }) {
           <div className="flex flex-wrap gap-1.5 mt-2">{totalesSinQr.map((t) => <button key={t} onClick={() => { setMontoNuevo(String(t)); setModo("nuevo"); }} className="text-xs font-semibold rounded-full bg-white border border-amber-300 px-2.5 py-1 hover:bg-amber-100">Subir QR de {bs0(t)}</button>)}</div>
         </div>
       )}
-      {modo === "nuevo" ? (
+      {modo === "editar" ? (
+        <EditarVariosQr db={db} actions={actions} toast={toast} onListo={() => setModo("lista")} />
+      ) : modo === "nuevo" ? (
         <SubirVariosQr key={montoNuevo} db={db} actions={actions} montoInicial={montoNuevo} onCancel={() => { setModo("lista"); setMontoNuevo(""); }} onListo={() => { setModo("lista"); setMontoNuevo(""); }} toast={toast} />
       ) : (
-        <div className="flex flex-col sm:flex-row gap-2"><Btn variant="outline" className="flex-1" onClick={() => { setMontoNuevo(""); setModo("nuevo"); }}><Plus size={15} /> Subir QR (uno o varios)</Btn></div>
+        <div className="flex flex-col sm:flex-row gap-2"><Btn variant="outline" className="flex-1" onClick={() => { setMontoNuevo(""); setModo("nuevo"); }}><Plus size={15} /> Subir QR (uno o varios)</Btn>{db.qrs.length > 0 && <Btn variant="outline" className="flex-1" onClick={() => setModo("editar")}><Pencil size={15} /> Editar varios ({db.qrs.length})</Btn>}</div>
       )}
       <div className="space-y-2">
         {db.qrs.map((q) => {
@@ -321,9 +321,9 @@ function SubirVariosQr({ db, actions, montoInicial = "", onCancel, onListo, toas
           return (
             <div key={x.key} className="rounded-xl bg-white border border-slate-200 p-2.5 space-y-2">
               <div className="flex items-center justify-between"><span className="text-xs font-semibold text-slate-600">QR {i + 1}</span><button type="button" disabled={busy} onClick={() => quitar(x.key)} className="p-1 rounded text-slate-400 hover:text-rose-600" aria-label={`Quitar QR ${i + 1}`}><X size={16} /></button></div>
-              <button type="button" onClick={() => setVer(x.url)} className="relative w-full h-56 rounded-lg bg-white border border-slate-100 overflow-hidden" aria-label={`Ver el QR ${i + 1} en grande`}>
-                <img src={x.url} alt={`QR ${i + 1}`} className="w-full h-full object-contain" />
-                <span className="absolute bottom-1.5 right-1.5 text-[11px] font-semibold bg-slate-900/75 text-white rounded px-1.5 py-0.5">Toca para ampliar</span>
+              <button type="button" onClick={() => setVer(x.url)} className="relative block w-full rounded-lg bg-white border border-slate-100 overflow-hidden" aria-label={`Ver el QR ${i + 1} en grande`}>
+                <img src={x.url} alt={`QR ${i + 1} (imagen completa)`} className="w-full h-auto" />
+                <span className="absolute top-1.5 right-1.5 text-[11px] font-semibold bg-slate-900/75 text-white rounded px-1.5 py-0.5">Toca para ampliar</span>
               </button>
               <div className="grid grid-cols-2 gap-2">
                 <Field label="Monto (Bs)"><Input type="number" inputMode="decimal" value={x.monto} placeholder="Vacío = libre" onChange={(e) => cambiar(x.key, "monto", e.target.value)} /></Field>
@@ -342,6 +342,70 @@ function SubirVariosQr({ db, actions, montoInicial = "", onCancel, onListo, toas
         {estado && <span className="text-xs text-slate-600 flex items-center gap-1.5 mr-auto"><Spinner /> {estado}</span>}
         <Btn variant="ghost" size="sm" disabled={busy} onClick={onCancel}>Cancelar</Btn>
         <Btn size="sm" disabled={busy || !items.length || mal} onClick={guardar}>{busy ? <Spinner /> : null} Guardar {items.length > 1 ? `los ${items.length} QR` : "QR"}</Btn>
+      </div>
+      {ver && <PhotoViewer urls={[ver]} title="QR" onClose={() => setVer(null)} />}
+    </div>
+  );
+}
+
+// Editar varios QR guardados a la vez: cada uno con su imagen completa para leer el monto
+function EditarVariosQr({ db, actions, toast, onListo }) {
+  const [filas, setFilas] = useState(() => db.qrs.map((q) => ({ id: q.id, url: q.url, nombre: q.nombre, monto: q.monto == null ? "" : String(q.monto), antes: { nombre: q.nombre, monto: q.monto == null ? "" : String(q.monto) } })));
+  const [ver, setVer] = useState(null);
+  const [estado, setEstado] = useState("");
+  const [busy, run] = useBusy();
+  const cambiar = (id, campo, v) => setFilas((a) => a.map((x) => (x.id === id ? { ...x, [campo]: v } : x)));
+  const cambiadas = filas.filter((x) => x.nombre !== x.antes.nombre || x.monto !== x.antes.monto);
+  const mal = filas.some((x) => x.monto !== "" && !(Number(x.monto) > 0));
+  const guardar = () => run(async () => {
+    let ok = 0, pares = 0;
+    for (let i = 0; i < cambiadas.length; i++) {
+      const x = cambiadas[i];
+      setEstado(`Guardando ${i + 1} de ${cambiadas.length}…`);
+      const r = await actions.editQR({ id: x.id }, x.nombre, x.monto, { silencioso: true });
+      if (!r) break;
+      ok++;
+      // Si cambió el monto, el QR pasa a los pares de ese precio (los de otro precio lo dejan)
+      if (x.monto !== x.antes.monto && x.monto !== "") {
+        const ids = db.products.filter((p) => (p.estado === "Disponible" || p.estado === "Reservado") && Number(p.precio) === Number(x.monto)
+          && (!p.qrId || p.qrId === x.id || db.qrs.find((q) => q.id === p.qrId)?.monto == null)).map((p) => p.id);
+        const n = await actions.assignQR(x.id, ids, true, { silencioso: true });
+        if (typeof n === "number") pares += n;
+      }
+    }
+    setEstado("");
+    await actions.refrescar();
+    if (ok) { toast(`${ok === 1 ? "QR actualizado" : `${ok} QR actualizados`}${pares ? `; quedaron en ${pares} par${pares === 1 ? "" : "es"} de su precio` : ""}.`); onListo(); }
+  });
+  return (
+    <div className="rounded-xl border border-purple-200 bg-purple-50 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-slate-900">Editar QR ({filas.length})</div>
+        <span className="text-xs text-slate-500">{cambiadas.length ? `${cambiadas.length} con cambios` : "Cambia los que quieras"}</span>
+      </div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        {filas.map((x, i) => {
+          const cambio = x.nombre !== x.antes.nombre || x.monto !== x.antes.monto;
+          return (
+            <div key={x.id} className={`rounded-xl bg-white border p-2.5 space-y-2 ${cambio ? "border-purple-400 ring-1 ring-purple-300" : "border-slate-200"}`}>
+              <div className="text-xs font-semibold text-slate-600">QR {i + 1}{cambio ? " · con cambios" : ""}</div>
+              <button type="button" onClick={() => setVer(x.url)} className="relative block w-full rounded-lg bg-white border border-slate-100 overflow-hidden" aria-label={`Ver el QR ${i + 1} en grande`}>
+                <img src={x.url} alt={`QR ${i + 1} (imagen completa)`} className="w-full h-auto" loading="lazy" />
+                <span className="absolute top-1.5 right-1.5 text-[11px] font-semibold bg-slate-900/75 text-white rounded px-1.5 py-0.5">Toca para ampliar</span>
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Monto (Bs)"><Input type="number" inputMode="decimal" value={x.monto} placeholder="Vacío = libre" onChange={(e) => cambiar(x.id, "monto", e.target.value)} /></Field>
+                <Field label="Nombre"><Input value={x.nombre} maxLength={60} onChange={(e) => cambiar(x.id, "nombre", e.target.value)} /></Field>
+              </div>
+              {x.monto !== "" && !(Number(x.monto) > 0) && <p className="text-xs text-rose-600">Escribe un monto mayor a cero, o déjalo vacío si es de monto libre.</p>}
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-end gap-2 items-center">
+        {estado && <span className="text-xs text-slate-600 flex items-center gap-1.5 mr-auto"><Spinner /> {estado}</span>}
+        <Btn variant="ghost" size="sm" disabled={busy} onClick={onListo}>Cancelar</Btn>
+        <Btn size="sm" disabled={busy || !cambiadas.length || mal} onClick={guardar}>{busy ? <Spinner /> : null} Guardar {cambiadas.length > 1 ? `los ${cambiadas.length} cambios` : "cambios"}</Btn>
       </div>
       {ver && <PhotoViewer urls={[ver]} title="QR" onClose={() => setVer(null)} />}
     </div>

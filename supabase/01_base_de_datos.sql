@@ -2532,6 +2532,103 @@ drop trigger if exists vortex_foto_original on public.producto_fotos;
 create trigger vortex_foto_original after delete on public.producto_fotos
 for each row execute function public._foto_original_borrada();
 
+-- =====================================================================
+--  PAQUETERÍAS EN COCHABAMBA
+--  Lista de paqueterías donde el cliente recoge su pedido (nombre, dirección
+--  y ubicación en el mapa). La primera es MARKET B, en la Av. Heroínas.
+--  Se pueden agregar otras y elegir cuáles se muestran en la tienda.
+-- =====================================================================
+
+alter table public.configuracion add column if not exists paqueterias jsonb not null default '[]'::jsonb;
+
+update public.configuracion
+   set paqueterias = jsonb_build_array(jsonb_build_object(
+         'id', 'market-b', 'nombre', 'MARKET B', 'direccion', 'Av. Heroínas, Cochabamba',
+         'mapa', '', 'lat', null, 'lng', null, 'activa', true))
+ where id = 1 and paqueterias = '[]'::jsonb;
+
+-- Datos públicos de la tienda (ahora con las paqueterías activas)
+create or replace function public.tienda_config()
+returns jsonb language sql stable security definer set search_path = public as $$
+  select jsonb_build_object('destinos', c.destinos, 'vigencia_horas', c.vigencia_horas,
+                            'whatsapp', c.whatsapp, 'paqueteria', c.paqueteria_cbba,
+                            'paqueterias', coalesce((select jsonb_agg(p) from jsonb_array_elements(c.paqueterias) p
+                                                      where coalesce((p->>'activa')::boolean, true)), '[]'::jsonb))
+    from public.configuracion c where id = 1
+$$;
+
+create or replace function public.cliente_pedir(p_productos uuid[], p_tipo text, p_envio jsonb, p_nota text)
+returns text language plpgsql security definer set search_path = public as $$
+declare
+  v_c uuid := public._mi_cliente();
+  v_modo text := coalesce(p_envio->>'modo', '');
+  v_destino text := left(trim(coalesce(p_envio->>'destino', '')), 80);
+  v_recibe text := left(trim(coalesce(p_envio->>'recibe', '')), 100);
+  v_ci text := left(trim(coalesce(p_envio->>'ci', '')), 30);
+  v_envio jsonb;
+  v_paq jsonb;
+  v_horas int := coalesce((select vigencia_horas from public.configuracion where id = 1), 48);
+  v_grupo text;
+  v_res text;
+  p record;
+  n int := coalesce(array_length(p_productos, 1), 0);
+begin
+  if v_c is null then raise exception 'Inicia sesión con tu cuenta de cliente para hacer pedidos.'; end if;
+  if n = 0 then raise exception 'Elige al menos un par.'; end if;
+  if n > 5 then raise exception 'Puedes pedir hasta 5 pares a la vez.'; end if;
+  if (select count(*) from public.reservas where cliente_id = v_c and web and estado in ('Por pagar','Activa')) + n > 5 then
+    raise exception 'Ya tienes pedidos sin terminar. Paga o cancela los que tienes en "Mis pedidos".';
+  end if;
+  if v_modo = 'cochabamba' then
+    v_destino := 'Cochabamba';
+    -- Paquetería elegida (de las activas que configuró la tienda)
+    select pq.valor into v_paq from jsonb_array_elements(coalesce((select paqueterias from public.configuracion where id = 1), '[]'::jsonb)) as pq(valor)
+     where coalesce((pq.valor->>'activa')::boolean, true)
+     order by (pq.valor->>'id' = coalesce(p_envio->>'paqueteria', '')) desc
+     limit 1;
+    if v_paq is not null and coalesce(p_envio->>'paqueteria', '') <> '' and v_paq->>'id' <> p_envio->>'paqueteria' then
+      raise exception 'Esa paquetería ya no está disponible. Elige otra.';
+    end if;
+  elsif v_modo = 'envio' then
+    if v_destino = '' then raise exception 'Escribe a qué departamento, ciudad o provincia se envía.'; end if;
+  else
+    raise exception 'Elige cómo quieres recibir tu pedido.';
+  end if;
+  if v_recibe = '' then raise exception 'Escribe el nombre de quien recoge.'; end if;
+  if length(v_ci) < 4 then raise exception 'Escribe el carnet de identidad (CI) de quien recoge.'; end if;
+
+  v_envio := jsonb_build_object('entrega', 'Encomienda', 'modo', v_modo, 'destino', v_destino,
+    'recibe', v_recibe, 'ci', v_ci, 'transportista', coalesce(v_paq->>'nombre', ''),
+    'paq_id', coalesce(v_paq->>'id', ''), 'paq_dir', coalesce(v_paq->>'direccion', ''), 'paq_mapa', coalesce(v_paq->>'mapa', ''),
+    'paq_lat', v_paq->'lat', 'paq_lng', v_paq->'lng', 'direccion', '', 'pagaCliente', true, 'delivery', 0);
+
+  for p in select * from public.productos where id = any(p_productos) order by codigo loop
+    if p.estado <> 'Disponible' then
+      raise exception '% ya no está disponible. Quítalo de tu pedido e inténtalo otra vez.', p.marca || ' ' || p.modelo || ' (' || p.codigo || ')';
+    end if;
+    if exists (select 1 from public.reservas where cliente_id = v_c and producto_id = p.id and web and estado = 'Por pagar') then
+      raise exception '% ya está en uno de tus pedidos por pagar. Revisa "Mis pedidos".', p.marca || ' ' || p.modelo;
+    end if;
+  end loop;
+  if (select count(*) from public.productos where id = any(p_productos)) <> n then
+    raise exception 'Uno de los pares ya no está en el catálogo. Recarga la página.';
+  end if;
+
+  v_grupo := public._codigo('WEB-', nextval('public.seq_pedido_web'), 3);
+  for p in select * from public.productos where id = any(p_productos) order by codigo loop
+    v_res := public._codigo('RES-', nextval('public.seq_reserva'), 3);
+    insert into public.reservas(id, producto_id, cliente_id, canal, vence, adelanto, estado, envio, obs, web, tipo_web, pedido_web, creado_por)
+    values (v_res, p.id, v_c, 'App VORTEX', now() + make_interval(hours => v_horas), 0, 'Por pagar', v_envio,
+            left(trim(coalesce(p_nota, '')), 300), true, 'Compra', v_grupo, null);
+  end loop;
+
+  perform public._audit(null, 'Pedido de la tienda en línea', v_grupo, format('Por pagar · %s par(es) · paquetería %s', n, v_destino));
+  return v_grupo;
+end $$;
+
+grant execute on function public.tienda_config() to anon, authenticated;
+grant execute on function public.cliente_pedir(uuid[], text, jsonb, text) to authenticated;
+
 -- Avisar a Supabase que hay funciones nuevas
 notify pgrst, 'reload schema';
 

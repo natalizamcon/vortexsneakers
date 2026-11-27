@@ -22,7 +22,7 @@ async function leerTodo(tabla: string, orden = "creado_en") {
 export const DB_VACIA = {
   users: [], providers: [], lots: [], products: [], clients: [], reservations: [], sales: [], payments: [], qrs: [], comprobantes: [],
   expenses: [], otherIncome: [], events: [], audit: [],
-  config: { canales: [], metodos: [], destinos: [], vigenciaHoras: 48, diasBajaRotacion: 30, whatsapp: "", paqueteria: "" },
+  config: { canales: [], metodos: [], destinos: [], vigenciaHoras: 48, diasBajaRotacion: 30, whatsapp: "", paqueteria: "", paqueterias: [] },
 };
 
 export async function cargarTodo(esAdmin: boolean) {
@@ -92,7 +92,7 @@ export async function cargarTodo(esAdmin: boolean) {
     config: {
       canales: c.canales || [], metodos: c.metodos || [], destinos: c.destinos || [],
       vigenciaHoras: c.vigencia_horas || 48, diasBajaRotacion: c.dias_baja_rotacion || 30,
-      whatsapp: c.whatsapp || "", paqueteria: c.paqueteria_cbba || "",
+      whatsapp: c.whatsapp || "", paqueteria: c.paqueteria_cbba || "", paqueterias: Array.isArray(c.paqueterias) ? c.paqueterias : [],
     },
   };
 }
@@ -332,10 +332,19 @@ export function crearAcciones({ db, me, recargar, toast }) {
       await recargar();
       return id;
     },
-    async editQR(qr, nombre, monto) {
-      return rpc("editar_qr", { p_qr: qr.id, p_nombre: nombre, p_monto: monto === "" || monto == null ? null : Number(monto) }, "QR actualizado.");
+    async editQR(qr, nombre, monto, { silencioso = false } = {}) {
+      const args = { p_qr: qr.id, p_nombre: nombre, p_monto: monto === "" || monto == null ? null : Number(monto) };
+      if (!silencioso) return rpc("editar_qr", args, "QR actualizado.");
+      const { error } = await supabase.rpc("editar_qr", args);
+      if (error) return fallo(error);
+      return true;
     },
-    async assignQR(qrId, productIds, reemplazar = false) {
+    async assignQR(qrId, productIds, reemplazar = false, { silencioso = false } = {}) {
+      if (silencioso) {
+        const { data, error } = await supabase.rpc("asignar_qr", { p_qr: qrId, p_productos: productIds, p_reemplazar: reemplazar });
+        if (error) { fallo(error); return null; }
+        return data;
+      }
       const n = await rpc("asignar_qr", { p_qr: qrId, p_productos: productIds, p_reemplazar: reemplazar });
       if (n === null) return false;
       toast(qrId ? `QR asignado a ${productIds.length} par${productIds.length === 1 ? "" : "es"}.` : `Se quitó el QR de ${productIds.length} par${productIds.length === 1 ? "" : "es"}.`);
@@ -459,6 +468,7 @@ export function crearAcciones({ db, me, recargar, toast }) {
       if (cfg.diasBajaRotacion) fila.dias_baja_rotacion = cfg.diasBajaRotacion;
       if (cfg.whatsapp !== undefined) fila.whatsapp = String(cfg.whatsapp).replace(/[^0-9+]/g, "");
       if (cfg.paqueteria !== undefined) fila.paqueteria_cbba = String(cfg.paqueteria).trim().slice(0, 300);
+      if (cfg.paqueterias !== undefined) fila.paqueterias = cfg.paqueterias;
       const { error } = await supabase.from("configuracion").update(fila).eq("id", 1);
       if (error) return fallo(error);
       toast("Configuración guardada."); await recargar(); return true;

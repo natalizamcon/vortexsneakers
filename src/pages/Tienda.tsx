@@ -12,6 +12,7 @@ import { PhotoViewer } from "../components/photos";
 import { fijarAvisoSalir, usePaginaAtras } from "../lib/atras";
 import { VideoThumb, VideoPlayer } from "../components/videos";
 import { Carrusel } from "../components/carrusel";
+import { MapaPaqueteria, PAQUETERIA_INICIAL } from "../components/mapa";
 
 const BOLSA_KEY = "vx-bolsa";
 const leer = (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } };
@@ -19,7 +20,7 @@ const guardar = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } 
 
 // Solo dos formas de entrega, siempre por paquetería
 const ENTREGAS = [
-  { k: "cochabamba", titulo: "Paquetería en Cochabamba", desc: "Lo recoges en la paquetería.", icon: Package },
+  { k: "cochabamba", titulo: "Recoger en paquetería", desc: "En Cochabamba.", icon: Package },
   { k: "envio", titulo: "Envío a otro departamento", desc: "Por encomienda a tu ciudad.", icon: Truck },
 ];
 const ZONAS = ["Cercado", "Sacaba", "Quillacollo", "Tiquipaya", "Colcapirhua", "Vinto", "Sipe Sipe", ...DEPARTAMENTOS];
@@ -37,7 +38,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   const llaveBolsa = vistaPrevia ? BOLSA_KEY + "-vista" : BOLSA_KEY;
   const [cat, setCat] = useState(null);
   const [error, setError] = useState("");
-  const [cfg, setCfg] = useState({ destinos: DEPARTAMENTOS, vigencia_horas: 48, whatsapp: "62035357", paqueteria: "" });
+  const [cfg, setCfg] = useState({ destinos: DEPARTAMENTOS, vigencia_horas: 48, whatsapp: "62035357", paqueteria: "", paqueterias: [PAQUETERIA_INICIAL] });
   const [vista, setVista] = useState("catalogo");
   const [q, setQ] = useState("");
   const [talla, setTalla] = useState("");
@@ -83,7 +84,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
 
   useEffect(() => {
     cargar();
-    supabase.rpc("tienda_config").then(({ data }) => { if (data) setCfg({ destinos: data.destinos?.length ? data.destinos : DEPARTAMENTOS, vigencia_horas: data.vigencia_horas || 48, whatsapp: data.whatsapp || "62035357", paqueteria: data.paqueteria || "" }); });
+    supabase.rpc("tienda_config").then(({ data }) => { if (data) setCfg({ destinos: data.destinos?.length ? data.destinos : DEPARTAMENTOS, vigencia_horas: data.vigencia_horas || 48, whatsapp: data.whatsapp || "62035357", paqueteria: data.paqueteria || "", paqueterias: Array.isArray(data.paqueterias) ? data.paqueterias : [PAQUETERIA_INICIAL] }); });
     const t = setInterval(cargar, 60000);
     const vis = () => { if (document.visibilityState === "visible") cargar(); };
     document.addEventListener("visibilitychange", vis);
@@ -347,6 +348,9 @@ function Bolsa({ directo = false, pares, cfg, cuenta, onQuitar, onClose, onNeces
   const [otroDestino, setOtroDestino] = useState("");
   const [recibe, setRecibe] = useState(cuenta?.nombre || "");
   const [ci, setCi] = useState("");
+  const paqs = cfg.paqueterias || [];
+  const [paqId, setPaqId] = useState(paqs[0]?.id || "");
+  const paqElegida = paqs.find((x) => x.id === paqId) || paqs[0] || null;
   const [nota, setNota] = useState("");
   const [busy, run] = useBusy();
   const total = pares.reduce((a, p) => a + p.precio, 0);
@@ -356,7 +360,7 @@ function Bolsa({ directo = false, pares, cfg, cuenta, onQuitar, onClose, onNeces
     if (!cuenta) { onNecesitaCuenta(); return; }
     const { data, error } = await supabase.rpc("cliente_pedir", {
       p_productos: pares.map((p) => p.id), p_tipo: "Compra",
-      p_envio: { modo, destino: modo === "envio" ? destinoFinal : "Cochabamba", recibe, ci },
+      p_envio: { modo, destino: modo === "envio" ? destinoFinal : "Cochabamba", recibe, ci, paqueteria: modo === "cochabamba" ? paqElegida?.id || "" : "" },
       p_nota: nota,
     });
     if (error) { onError(mensajeError(error)); return; }
@@ -394,7 +398,12 @@ function Bolsa({ directo = false, pares, cfg, cuenta, onQuitar, onClose, onNeces
               ))}
             </div>
           </div>
-          {modo === "cochabamba" && cfg.paqueteria && <div className="rounded-xl bg-slate-50 px-3 py-2 text-xs text-slate-700 flex gap-2"><MapPin size={14} className="shrink-0 text-slate-400" /><span>Recoges en: <b>{cfg.paqueteria}</b></span></div>}
+          {modo === "cochabamba" && paqs.length > 1 && (
+            <div className="flex flex-wrap gap-1.5" role="radiogroup" aria-label="Paquetería">
+              {paqs.map((x) => <button key={x.id} type="button" role="radio" aria-checked={paqElegida?.id === x.id} onClick={() => setPaqId(x.id)} className={`px-3 py-1.5 rounded-full text-sm border ${paqElegida?.id === x.id ? "bg-purple-700 text-white border-purple-700" : "bg-white text-slate-700 border-slate-300"}`}>{x.nombre}</button>)}
+            </div>
+          )}
+          {modo === "cochabamba" && paqElegida && <MapaPaqueteria p={paqElegida} alto={170} />}
           {modo === "envio" && (
             <div className="grid sm:grid-cols-2 gap-3">
               <Field label="¿A dónde lo enviamos?">
@@ -511,7 +520,7 @@ function MiCuenta({ cuenta, onClose, onSalir, onGuardado, onPedidos }) {
 
 const textoEntrega = (e) => {
   if (!e?.entrega) return "";
-  if (e.modo === "cochabamba") return "Recojo en paquetería de Cochabamba";
+  if (e.modo === "cochabamba") return `Recojo en ${e.transportista || "paquetería de Cochabamba"}`;
   if (e.entrega === "Recojo en punto") return "Recoges en tienda (Cochabamba)";
   if (e.entrega === "Delivery Cochabamba") return `Envío a: ${e.direccion}`;
   return `Envío a ${e.destino}${e.transportista ? ` por ${e.transportista}` : ""}`;
@@ -717,6 +726,12 @@ function MisPedidos({ onVolver, toast, recargarCatalogo, cfg, destacar = "" }) {
                 {est.cancelado ? (
                   <div className="px-4 py-2.5 text-sm text-slate-600 bg-slate-50 flex items-center gap-2"><Pill tone="Cancelada">Cancelado</Pill>{!rechazado && items[0].obs && <span className="text-xs">{items[0].obs}</span>}</div>
                 ) : <Seguimiento est={est} />}
+                {!est.cancelado && est.envio.modo === "cochabamba" && est.envio.transportista && (
+                  <details className="mx-4 mb-3 group">
+                    <summary className="cursor-pointer list-none text-sm font-semibold text-purple-700 flex items-center gap-1"><MapPin size={14} /> Dónde recoger: {est.envio.transportista}</summary>
+                    <MapaPaqueteria className="mt-2" alto={170} p={{ nombre: est.envio.transportista, direccion: est.envio.paq_dir, mapa: est.envio.paq_mapa, lat: est.envio.paq_lat, lng: est.envio.paq_lng }} />
+                  </details>
+                )}
                 {v && (v.fecha_envio || v.guia) && (
                   <div className="mx-4 mb-3 rounded-lg bg-cyan-50 px-3 py-2 text-sm text-cyan-900 flex flex-wrap gap-x-4 gap-y-0.5">
                     {v.fecha_envio && <span><Truck size={13} className="inline -mt-0.5 mr-1" />{est.envio.modo === "cochabamba" ? "Lo dejamos en la paquetería el" : "Fecha de envío:"} <b>{fdate(v.fecha_envio)}</b></span>}
@@ -825,7 +840,7 @@ function PagarQr({ qr, onClose, toast }) {
   const n = qr.pares.length;
   return (
     <Modal title="Pagar con QR" onClose={onClose} footer={<><Btn variant="ghost" onClick={onClose}>Cerrar</Btn><Btn disabled={busy} onClick={descargar}>{busy ? <Spinner /> : <Download size={15} />} Guardar QR</Btn></>}>
-      <div className="rounded-xl bg-white border border-slate-200 p-3"><img src={url} alt="Código QR para pagar" className="w-full max-h-96 object-contain" /></div>
+      <div className="rounded-xl bg-white border border-slate-200 p-3"><img src={url} alt="Código QR para pagar" className="w-full h-auto" /></div>
       {qr.todo ? (
         qr.monto ? <div className="text-center"><div className="text-xs text-slate-500">Monto a pagar ({n === 1 ? "tu par" : `los ${n} pares`})</div><div className="vx-d text-3xl font-bold text-slate-900">{bs0(qr.monto)}</div></div>
           : <div className="text-center"><div className="text-xs text-slate-500">Escribe en tu banco el total{n > 1 ? ` de los ${n} pares` : ""}</div><div className="vx-d text-3xl font-bold text-slate-900">{bs0(qr.total)}</div></div>

@@ -3,6 +3,7 @@ import { LayoutDashboard, Package, Truck, Users, ShoppingBag, Wallet, BarChart3,
 import { AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from "recharts";
 import { C, pad2, isoLocal, NOW, TODAY, tick, addDays, diffDays, bs, bs0, fdate, sum, ftime, COLORS, ESTADOS_PEDIDO, DEPARTAMENTOS, TIPOS_EVENTO, RECORDATORIOS, MESES, DIAS, DIAS_LARGO, evDate, fechaLarga, recLabel, agendaEvents, reminderState, TIPOS_ENTREGA, GASTO_CATS, saleTotal, saleCost, paidOf, payState, lotTotal, pCost, computeMetrics, MARCAS, colorHex, ROLES, ACCESO, permisos, exportarCSV } from "../lib/utils";
 import { Isotipo, Logo, Sneaker, Btn, PILL, Pill, Panel, Field, inputCls, Input, Select, Modal, Stat, PageHead, MRow, Table, Td, Note, ProductPhoto, useBusy, Spinner, PasswordInput } from "../components/ui";
+import { MapaPaqueteria, PAQUETERIA_INICIAL, coordsDeEnlace } from "../components/mapa";
 
 export function Activity({ db, userName }) {
   const [u, setU] = useState("todos");
@@ -185,14 +186,61 @@ export function MyPasswordModal({ onClose, actions }) {
 // Datos que ven los clientes de la tienda en línea
 function TiendaConfig({ cfg, actions }) {
   const [wa, setWa] = useState(cfg.whatsapp || "");
-  const [paq, setPaq] = useState(cfg.paqueteria || "");
-  const cambios = wa !== (cfg.whatsapp || "") || paq !== (cfg.paqueteria || "");
+  const inicial = () => (cfg.paqueterias && cfg.paqueterias.length ? cfg.paqueterias : [PAQUETERIA_INICIAL]).map((x) => ({ ...x }));
+  const [paqs, setPaqs] = useState(inicial);
+  const [ubicando, setUbicando] = useState("");
+  const original = JSON.stringify(cfg.paqueterias || []);
+  const cambios = wa !== (cfg.whatsapp || "") || JSON.stringify(paqs) !== original;
+  const cambiar = (id, campo, v) => setPaqs((a) => a.map((x) => {
+    if (x.id !== id) return x;
+    const n = { ...x, [campo]: v };
+    // Si pegan un enlace de Google Maps con coordenadas, se usan para el mapa
+    if (campo === "mapa") { const c = coordsDeEnlace(v); if (c) { n.lat = c.lat; n.lng = c.lng; } }
+    return n;
+  }));
+  const agregar = () => setPaqs((a) => [...a, { id: `paq-${Date.now()}`, nombre: "", direccion: "", mapa: "", lat: null, lng: null, activa: true }]);
+  const quitar = (id) => { if (confirm("¿Quitar esta paquetería de la lista?")) setPaqs((a) => a.filter((x) => x.id !== id)); };
+  const miUbicacion = (id) => {
+    if (!navigator.geolocation) { alert("Este equipo no permite saber la ubicación."); return; }
+    setUbicando(id);
+    navigator.geolocation.getCurrentPosition(
+      (pos) => { setUbicando(""); setPaqs((a) => a.map((x) => (x.id === id ? { ...x, lat: Math.round(pos.coords.latitude * 1e6) / 1e6, lng: Math.round(pos.coords.longitude * 1e6) / 1e6 } : x))); },
+      () => { setUbicando(""); alert("No se pudo obtener la ubicación. Revisa que la app tenga permiso de ubicación."); },
+      { enableHighAccuracy: true, timeout: 15000 });
+  };
+  const listas = paqs.filter((x) => x.nombre.trim());
+  const guardar = () => actions.setConfig({ whatsapp: wa, paqueterias: listas.map((x) => ({ ...x, nombre: x.nombre.trim().slice(0, 60), direccion: String(x.direccion || "").trim().slice(0, 150), mapa: String(x.mapa || "").trim().slice(0, 500) })) });
   return (
-    <Panel title="Tienda en línea" sub="Lo ven los clientes en sus pedidos">
-      <div className="space-y-3">
-        <Field label="WhatsApp de contacto" hint="Aparece cuando un pago se aprueba, se rechaza o está en revisión."><Input type="tel" inputMode="tel" placeholder="Ej.: 71234567" value={wa} onChange={(e) => setWa(e.target.value)} /></Field>
-        <Field label="Paquetería en Cochabamba (nombre y dirección)" hint="Se muestra a quien elige recoger en Cochabamba."><Input value={paq} maxLength={300} placeholder="Ej.: Paquetería X, Av. Ayacucho y Aroma" onChange={(e) => setPaq(e.target.value)} /></Field>
-        <div className="flex justify-end"><Btn disabled={!cambios} onClick={() => actions.setConfig({ whatsapp: wa, paqueteria: paq })}>Guardar</Btn></div>
+    <Panel title="Tienda en línea" sub="Lo ven los clientes al comprar y en sus pedidos">
+      <div className="space-y-4">
+        <Field label="WhatsApp de contacto" hint="Aparece al comprar y en los pedidos de los clientes."><Input type="tel" inputMode="tel" placeholder="Ej.: 71234567" value={wa} onChange={(e) => setWa(e.target.value)} /></Field>
+        <div>
+          <div className="text-sm font-semibold text-slate-800">Paqueterías en Cochabamba</div>
+          <p className="text-xs text-slate-500 mt-0.5">Donde el cliente recoge su pedido. Si hay más de una “En la tienda”, el cliente elige cuál.</p>
+        </div>
+        {paqs.map((x) => (
+          <div key={x.id} className={`rounded-xl border p-3 space-y-2.5 ${x.activa ? "border-slate-200" : "border-dashed border-slate-300 opacity-75"}`}>
+            <div className="grid sm:grid-cols-2 gap-2">
+              <Field label="Nombre"><Input value={x.nombre} maxLength={60} placeholder="Ej.: MARKET B" onChange={(e) => cambiar(x.id, "nombre", e.target.value)} /></Field>
+              <Field label="Dirección"><Input value={x.direccion || ""} maxLength={150} placeholder="Ej.: Av. Heroínas, Cochabamba" onChange={(e) => cambiar(x.id, "direccion", e.target.value)} /></Field>
+            </div>
+            <Field label="Enlace de Google Maps (opcional)" hint="En Google Maps busca el lugar → Compartir → Copiar enlace, y pégalo aquí. El botón “Abrir en Maps” llevará a ese lugar.">
+              <Input value={x.mapa || ""} placeholder="https://maps.app.goo.gl/…" onChange={(e) => cambiar(x.id, "mapa", e.target.value)} />
+            </Field>
+            <div className="flex flex-wrap items-center gap-2">
+              <Btn size="sm" variant="outline" disabled={ubicando === x.id} onClick={() => miUbicacion(x.id)}>{ubicando === x.id ? <Spinner /> : <MapPin size={14} />} Usar mi ubicación actual</Btn>
+              {x.lat != null && x.lng != null && x.lat !== "" && <span className="text-xs text-slate-500">Punto en el mapa: {x.lat}, {x.lng} <button className="underline" onClick={() => setPaqs((a) => a.map((y) => (y.id === x.id ? { ...y, lat: null, lng: null } : y)))}>quitar</button></span>}
+            </div>
+            <p className="text-xs text-slate-500">“Usar mi ubicación actual” sirve si estás parado en la paquetería. Si no hay punto ni enlace, el mapa busca por el nombre y la dirección.</p>
+            {(x.nombre || x.direccion) && <MapaPaqueteria p={x} alto={160} />}
+            <div className="flex items-center justify-between gap-2">
+              <label className="flex items-center gap-2 text-sm text-slate-700"><input type="checkbox" className="w-4 h-4 accent-purple-700" checked={x.activa !== false} onChange={(e) => cambiar(x.id, "activa", e.target.checked)} /> En la tienda</label>
+              <button className="text-xs font-semibold text-rose-600 flex items-center gap-1" onClick={() => quitar(x.id)}><Trash2 size={13} /> Quitar</button>
+            </div>
+          </div>
+        ))}
+        <Btn variant="outline" className="w-full" onClick={agregar}><Plus size={15} /> Agregar otra paquetería</Btn>
+        <div className="flex justify-end"><Btn disabled={!cambios} onClick={guardar}>Guardar</Btn></div>
       </div>
     </Panel>
   );

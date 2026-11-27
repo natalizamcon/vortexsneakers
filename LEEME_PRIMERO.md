@@ -191,3 +191,10 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 - Tarjetas más compactas: en el celular se ven dos filas completas. **Lo compro** y el botón del carrito (+🛍) van lado a lado.
 - Filtros **Talla** y **Medida (cm)** como listas desplazables, y arriba el aviso “Las tallas varían según la marca: guíate por los cm”.
 - **Subir varios QR a la vez:** en Inventario → QR de pago → “Subir QR (uno o varios)”. Cada QR se ve en grande (tócalo para ampliarlo y leer el monto) y tiene su propio campo de monto. Al guardar, cada QR se pone solo en los pares de su precio que no tienen QR.
+- **Editar varios QR a la vez:** en QR de pago → “Editar varios”. Cada QR se muestra con su imagen completa (también el monto de abajo) y su campo de monto; cambias los que quieras y guardas todo junto. Si cambias el monto, el QR pasa a los pares de ese precio.
+
+## Paqueterías con mapa
+
+- En **Configuración → Tienda en línea → Paqueterías en Cochabamba** está **MARKET B (Av. Heroínas)**. Puedes agregar otras, cambiar nombre y dirección, y marcar cuáles salen “En la tienda”.
+- Ubicación: pega el enlace de Google Maps (Compartir → Copiar enlace) o, si estás en la paquetería, toca **Usar mi ubicación actual**.
+- Al comprar con “Recoger en paquetería”, el cliente ve el nombre, la dirección, el **mapa** y el botón **Abrir en Maps**. Si hay varias, elige una. En “Mis pedidos” ve “Dónde recoger”.
