@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
 import {
   ShoppingBag, Search, X, ZoomIn, Check, Plus, Trash2, Store, Truck, Package, Clock, LogOut, User,
-  CheckCircle2, AlertTriangle, ChevronRight, MapPin, RefreshCw, QrCode, Download, Eye, ArrowLeft, Upload, Camera, FileText, Play,
+  CheckCircle2, AlertTriangle, ChevronRight, MapPin, Ruler, RefreshCw, QrCode, Download, Eye, ArrowLeft, Upload, Camera, FileText, Play,
 } from "lucide-react";
 import { supabase, fotoUrl, mensajeError, comprimirImagen, BUCKET_COMPROBANTES } from "../lib/supabase";
 import { bs0, fcm, colorHex, norm, ftime, fdate, DEPARTAMENTOS } from "../lib/utils";
@@ -41,6 +41,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   const [vista, setVista] = useState("catalogo");
   const [q, setQ] = useState("");
   const [talla, setTalla] = useState("");
+  const [medida, setMedida] = useState("");
   const [categoria, setCategoria] = useState("Todas");
   const [orden, setOrden] = useState("recientes");
   const [bolsa, setBolsa] = useState(() => leer(llaveBolsa, []));
@@ -96,6 +97,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   useEffect(() => guardar(llaveBolsa, bolsa), [bolsa, llaveBolsa]);
 
   const tallas = useMemo(() => [...new Set((cat || []).map((p) => p.talla))].sort((a, b) => a - b), [cat]);
+  const medidas = useMemo(() => [...new Set((cat || []).filter((p) => p.cm != null && p.cm !== "").map((p) => Number(p.cm)))].sort((a, b) => a - b), [cat]);
   const categorias = useMemo(() => ["Todas", ...new Set((cat || []).map((p) => p.categoria).filter(Boolean))], [cat]);
   const lista = useMemo(() => {
     // "27cm" → "27 cm"; "27,5" → "27.5"
@@ -112,12 +114,12 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
       const tl = Number(p.talla);
       const numOk = numeros.every((w) => (pideCm ? cmCoincide(w, cm) : pideTalla ? tl === Number(w) : tl === Number(w) || cmCoincide(w, cm) || t.split(/\s+/).includes(w)));
       const cmOk = !pideCm || cm != null;
-      return textos.every((w) => t.includes(w)) && numOk && cmOk && (!talla || String(p.talla) === talla) && (categoria === "Todas" || p.categoria === categoria);
+      return textos.every((w) => t.includes(w)) && numOk && cmOk && (!talla || String(p.talla) === talla) && (!medida || Number(p.cm) === Number(medida)) && (categoria === "Todas" || p.categoria === categoria);
     });
     if (orden === "menor") l = [...l].sort((a, b) => a.precio - b.precio);
     if (orden === "mayor") l = [...l].sort((a, b) => b.precio - a.precio);
     return l;
-  }, [cat, q, talla, categoria, orden]);
+  }, [cat, q, talla, medida, categoria, orden]);
 
   const enBolsa = (id) => bolsa.includes(id);
   const alternar = (p) => {
@@ -129,7 +131,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
   const hayBarra = (bolsa.length > 0 && !bolsaAbierta && !directo) || (!!cuenta && vista === "catalogo" && bolsa.length === 0);
   const irAlInicio = () => {
     setDetalle(null); setVisor(null); setBolsaAbierta(false); setDirecto(null);
-    setVista("catalogo"); setQ(""); setTalla(""); setCategoria("Todas");
+    setVista("catalogo"); setQ(""); setTalla(""); setMedida(""); setCategoria("Todas");
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
   const salir = async () => { setCuentaAbierta(false); await supabase.auth.signOut(); };
@@ -178,6 +180,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
               <p className="inline-flex items-center gap-1.5 text-xs sm:text-sm font-semibold text-cyan-300 mb-2"><MapPin size={14} /> Cochabamba, Bolivia</p>
               <h1 className="vx-d text-2xl sm:text-5xl font-extrabold leading-tight max-w-2xl">Cada par es único.</h1>
               <p className="mt-2 sm:mt-3 text-sm sm:text-base text-slate-300 max-w-xl">Tenis en excelente estado. Envíos a todo Bolivia.</p>
+              <p className="mt-3 inline-flex items-center gap-1.5 rounded-lg bg-white/10 px-2.5 py-1.5 text-xs sm:text-sm text-white"><Ruler size={14} className="text-cyan-300 shrink-0" /><span>Las tallas varían según la marca: guíate por los <b>cm</b>.</span></p>
               {cat && <p className="mt-4 text-sm text-cyan-300 font-semibold">{cat.length} pares disponibles ahora</p>}
             </div>
           </section>
@@ -186,21 +189,23 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
             <div className="flex flex-col sm:flex-row gap-2 mb-3">
               <div className="relative flex-1">
                 <Search size={16} className="absolute left-3 top-2.5 text-slate-400 pointer-events-none" />
-                <input className={inputCls + " pl-9"} placeholder="Busca por marca, modelo, color, talla o cm (ej.: 27,5 cm)" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en el catálogo" />
+                <input className={inputCls + " pl-9"} placeholder="Busca marca, modelo o cm" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar en el catálogo" />
               </div>
               <div className="grid grid-cols-2 gap-2 sm:w-80">
                 <Select value={categoria} onChange={(e) => setCategoria(e.target.value)} options={categorias.map((c) => ({ value: c, label: c === "Todas" ? "Para todos" : c }))} aria-label="Categoría" />
                 <Select value={orden} onChange={(e) => setOrden(e.target.value)} options={[{ value: "recientes", label: "Más nuevos" }, { value: "menor", label: "Precio: menor" }, { value: "mayor", label: "Precio: mayor" }]} aria-label="Ordenar" />
               </div>
             </div>
-            {tallas.length > 0 && (
-              <div className="flex gap-1.5 overflow-x-auto vx-noscroll pb-1 mb-4 -mx-3 px-3 sm:mx-0 sm:px-0" role="group" aria-label="Filtrar por talla">
-                <span className="text-xs text-slate-500 self-center mr-1 shrink-0">Talla</span>
-                {["", ...tallas.map(String)].map((t) => (
-                  <button key={t || "todas"} onClick={() => setTalla(t)} aria-pressed={talla === t} className={`shrink-0 min-w-10 px-3 py-1.5 rounded-full text-sm border ${talla === t ? "bg-slate-900 text-white border-slate-900" : "bg-white text-slate-700 border-slate-200 hover:border-slate-400"}`}>{t ? String(t).replace(".", ",") : "Todas"}</button>
-                ))}
-              </div>
-            )}
+            <div className="grid grid-cols-2 gap-2 mb-4 sm:max-w-md">
+              <label className="block">
+                <span className="text-xs font-medium text-slate-600">Talla</span>
+                <Select value={talla} onChange={(e) => setTalla(e.target.value)} options={[{ value: "", label: "Todas" }, ...tallas.map((t) => ({ value: String(t), label: `Talla ${String(t).replace(".", ",")}` }))]} aria-label="Filtrar por talla" />
+              </label>
+              <label className="block">
+                <span className="text-xs font-medium text-slate-600">Medida (cm)</span>
+                <Select value={medida} onChange={(e) => setMedida(e.target.value)} options={[{ value: "", label: "Todas" }, ...medidas.map((m) => ({ value: String(m), label: `${String(m).replace(".", ",")} cm` }))]} aria-label="Filtrar por centímetros" />
+              </label>
+            </div>
 
             {error ? (
               <div className="rounded-xl border border-rose-200 bg-white p-6 text-center">
@@ -212,7 +217,7 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
             ) : !lista.length ? (
               <div className="rounded-xl border border-dashed border-slate-300 bg-white py-14 px-4 text-center">
                 <p className="text-sm text-slate-600">{cat.length ? "No hay pares con esos filtros." : "Estamos preparando pares nuevos. Vuelve pronto."}</p>
-                {cat.length > 0 && <Btn variant="outline" className="mt-3" onClick={() => { setQ(""); setTalla(""); setCategoria("Todas"); }}>Ver todo el catálogo</Btn>}
+                {cat.length > 0 && <Btn variant="outline" className="mt-3" onClick={() => { setQ(""); setTalla(""); setMedida(""); setCategoria("Todas"); }}>Ver todo el catálogo</Btn>}
               </div>
             ) : (
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3 sm:gap-4">
@@ -223,16 +228,16 @@ export function Tienda({ cuenta, onCuentaCambio, vistaPrevia = false, onSalirVis
                       {p.videos.length > 0 && <span className="absolute top-2 right-2 pointer-events-none flex items-center gap-1 text-xs font-semibold text-white bg-slate-900/75 rounded-md px-2 py-0.5"><Play size={11} className="fill-white" /> Video</span>}
                       {enBolsa(p.id) && <span className="absolute top-2 left-2 pointer-events-none flex items-center gap-1 text-xs font-semibold bg-purple-700 text-white rounded-md px-2 py-0.5"><Check size={12} /> En tu carrito</span>}
                     </div>
-                    <button className="text-left px-3 pt-2.5 flex-1" onClick={() => setDetalle(p.id)}>
+                    <button className="text-left px-2.5 sm:px-3 pt-2 flex-1 min-w-0" onClick={() => setDetalle(p.id)}>
                       <div className="text-sm font-semibold text-slate-900 truncate">{p.marca} {p.modelo}</div>
-                      <div className="text-xs text-slate-500 mt-0.5 truncate">Talla {String(p.talla).replace(".", ",")}{p.cm ? ` · ${fcm(p.cm)}` : ""} · {p.color}</div>
-                      <div className="vx-d vx-num text-lg font-bold text-slate-900 mt-1">{bs0(p.precio)}</div>
+                      <div className="text-xs text-slate-500 truncate">T. {String(p.talla).replace(".", ",")}{p.cm ? ` · ${fcm(p.cm)}` : ""} · {p.color}</div>
+                      <div className="vx-d vx-num text-base sm:text-lg font-bold text-slate-900">{bs0(p.precio)}</div>
                     </button>
-                    <div className="p-3 pt-2 space-y-1.5">
-                      <Btn size="sm" className="w-full" onClick={() => comprarYa(p)}><ShoppingBag size={14} /> Lo compro</Btn>
-                      <Btn size="sm" variant="outline" className="w-full" onClick={() => alternar(p)}>
-                        {enBolsa(p.id) ? <><Check size={14} /> En tu carrito</> : <><Plus size={14} /> Añadir al carrito</>}
-                      </Btn>
+                    <div className="p-2 sm:p-3 pt-1.5 flex gap-1.5">
+                      <button onClick={() => comprarYa(p)} className="flex-1 min-w-0 h-9 rounded-lg bg-purple-700 hover:bg-purple-800 text-white text-xs sm:text-sm font-semibold">Lo compro</button>
+                      <button onClick={() => alternar(p)} className={`h-9 px-2.5 rounded-lg border text-xs sm:text-sm font-semibold flex items-center justify-center gap-1 shrink-0 ${enBolsa(p.id) ? "border-cyan-500 bg-cyan-50 text-cyan-800" : "border-slate-300 text-slate-700"}`} aria-label={enBolsa(p.id) ? "Quitar de mi carrito" : "Añadir a mi carrito"} title={enBolsa(p.id) ? "En tu carrito" : "Añadir a mi carrito"}>
+                        {enBolsa(p.id) ? <Check size={15} /> : <Plus size={15} />}<ShoppingBag size={15} />
+                      </button>
                     </div>
                   </article>
                 ))}

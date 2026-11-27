@@ -188,3 +188,5 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 - El logo lleva al inicio del catálogo.
 - Las fotos se pueden ajustar las veces que quieras: siempre se parte de la foto original, sin perder calidad.
 - En “Imagen para redes” eliges qué foto usar (empieza con la que estabas viendo en la ficha).
+- Tarjetas más compactas: en el celular se ven dos filas completas. **Lo compro** y el botón del carrito (+🛍) van lado a lado.
+- Filtros **Talla** y **Medida (cm)** como listas desplazables, y arriba el aviso “Las tallas varían según la marca: guíate por los cm”.
