@@ -312,7 +312,8 @@ export function crearAcciones({ db, me, recargar, toast }) {
       return n;
     },
     // ---------- QR de pago ----------
-    async createQR(file, nombre, monto, productIds = []) {
+    async refrescar() { await recargar(); },
+    async createQR(file, nombre, monto, productIds = [], { silencioso = false } = {}) {
       // Los QR casi no se comprimen: tienen que poder escanearse
       const grande = file.size > 1.5 * 1024 * 1024;
       const blob = grande ? await comprimirImagen(file, 1400, 0.95) : file;
@@ -324,8 +325,9 @@ export function crearAcciones({ db, me, recargar, toast }) {
       if (error) { await supabase.storage.from(BUCKET).remove([ruta]); return fallo(error); }
       if (productIds.length) {
         const r = await supabase.rpc("asignar_qr", { p_qr: id, p_productos: productIds, p_reemplazar: false });
-        if (r.error) { fallo(r.error); await recargar(); return id; }
+        if (r.error) { fallo(r.error); if (!silencioso) await recargar(); return id; }
       }
+      if (silencioso) return id;
       toast(productIds.length ? `QR guardado y asignado a ${productIds.length} par${productIds.length === 1 ? "" : "es"}.` : "QR guardado.");
       await recargar();
       return id;

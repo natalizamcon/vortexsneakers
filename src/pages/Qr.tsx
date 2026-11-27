@@ -2,7 +2,7 @@
 import { useState, useMemo, useEffect } from "react";
 import { QrCode, Plus, Trash2, Pencil, Share2, Download, Search, CheckCircle2, AlertTriangle, X } from "lucide-react";
 import { Btn, Field, Input, Modal, Note, ProductPhoto, Spinner, useBusy, inputCls } from "../components/ui";
-import { PhotoPicker } from "../components/photos";
+import { PhotoPicker, PhotoViewer } from "../components/photos";
 import { bs0, norm } from "../lib/utils";
 
 const montoTxt = (q) => (q?.monto ? bs0(q.monto) : "Monto libre");
@@ -52,14 +52,16 @@ function NuevoQr({ montoInicial = "" as any, onCancel, onGuardar, busy }) {
   const [url, setUrl] = useState("");
   const [monto, setMonto] = useState(montoInicial ? String(montoInicial) : "");
   const [nombre, setNombre] = useState("");
+  const [ver, setVer] = useState(false);
   useEffect(() => { if (!file) return; const u = URL.createObjectURL(file); setUrl(u); return () => URL.revokeObjectURL(u); }, [file]);
   const montoOk = monto === "" || Number(monto) > 0;
   return (
     <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 space-y-3">
       <div className="text-sm font-semibold text-slate-900">Subir un QR nuevo</div>
       <div className="flex gap-3 items-start">
-        <div className="w-28 h-28 shrink-0 rounded-lg bg-white border border-slate-200 grid place-items-center overflow-hidden">
-          {url ? <img src={url} alt="QR elegido" className="w-full h-full object-contain" /> : <QrCode size={36} className="text-slate-300" />}
+        <div className={`${url ? "w-40 h-40" : "w-28 h-28"} shrink-0 rounded-lg bg-white border border-slate-200 grid place-items-center overflow-hidden relative`}>
+          {url ? <button type="button" onClick={() => setVer(true)} className="w-full h-full" aria-label="Ver el QR en grande"><img src={url} alt="QR elegido" className="w-full h-full object-contain" /><span className="absolute bottom-1 right-1 text-[10px] font-semibold bg-slate-900/70 text-white rounded px-1">Ampliar</span></button> : <QrCode size={36} className="text-slate-300" />}
+          {ver && url && <PhotoViewer urls={[url]} title="QR elegido" onClose={() => setVer(false)} />}
         </div>
         <div className="flex-1 space-y-2">
           <div className="flex gap-2 flex-wrap"><PhotoPicker compact max={1} onFiles={(fs) => fs[0] && setFile(fs[0])} /></div>
@@ -176,19 +178,9 @@ export function QrManagerModal({ db, actions, onClose, toast }) {
         </div>
       )}
       {modo === "nuevo" ? (
-        <NuevoQr key={montoNuevo} montoInicial={montoNuevo} busy={busy} onCancel={() => { setModo("lista"); setMontoNuevo(""); }} onGuardar={({ file, monto, nombre }) => run(async () => {
-          const id = await actions.createQR(file, nombre, monto, []);
-          if (id) {
-            setModo("lista");
-            // Al terminar de subirlo, se abre para elegir los pares (ya marcados los del mismo precio)
-            const qr = { id, nombre: nombre || (monto ? `QR Bs ${Number(monto)}` : "QR monto libre"), monto: monto ? Number(monto) : null, url: "" };
-            const mismos = monto ? db.products.filter((p) => (p.estado === "Disponible" || p.estado === "Reservado") && Number(p.precio) === Number(monto) && (!p.qrId || db.qrs.find((q) => q.id === p.qrId)?.monto == null)).map((p) => p.id) : [];
-            setSeleccion(new Set(mismos));
-            setAsignar(qr);
-          }
-        })} />
+        <SubirVariosQr key={montoNuevo} db={db} actions={actions} montoInicial={montoNuevo} onCancel={() => { setModo("lista"); setMontoNuevo(""); }} onListo={() => { setModo("lista"); setMontoNuevo(""); }} toast={toast} />
       ) : (
-        <div className="flex flex-col sm:flex-row gap-2"><Btn variant="outline" className="flex-1" onClick={() => { setMontoNuevo(""); setModo("nuevo"); }}><Plus size={15} /> Subir un QR nuevo</Btn></div>
+        <div className="flex flex-col sm:flex-row gap-2"><Btn variant="outline" className="flex-1" onClick={() => { setMontoNuevo(""); setModo("nuevo"); }}><Plus size={15} /> Subir QR (uno o varios)</Btn></div>
       )}
       <div className="space-y-2">
         {db.qrs.map((q) => {
@@ -270,5 +262,88 @@ export function QrAssignModal({ db, ids, actions, onClose, onDone }) {
         </>
       )}
     </Modal>
+  );
+}
+
+// Subir varios QR a la vez: cada uno se ve en grande para leer su monto y escribirlo
+function SubirVariosQr({ db, actions, montoInicial = "", onCancel, onListo, toast }) {
+  const [items, setItems] = useState([]); // { key, file, url, monto, nombre }
+  const [ver, setVer] = useState(null);
+  const [estado, setEstado] = useState("");
+  const [busy, run] = useBusy();
+  useEffect(() => () => items.forEach((x) => URL.revokeObjectURL(x.url)), []);
+  const agregar = (fs) => setItems((a) => {
+    const nuevos = fs.map((f, i) => ({ key: `${Date.now()}-${i}-${f.name}`, file: f, url: URL.createObjectURL(f), monto: a.length === 0 && i === 0 && montoInicial ? String(montoInicial) : "", nombre: "" }));
+    return [...a, ...nuevos].slice(0, 12);
+  });
+  const cambiar = (k, campo, v) => setItems((a) => a.map((x) => (x.key === k ? { ...x, [campo]: v } : x)));
+  const quitar = (k) => setItems((a) => { const x = a.find((y) => y.key === k); if (x) URL.revokeObjectURL(x.url); return a.filter((y) => y.key !== k); });
+  const disponibles = (p) => p.estado === "Disponible" || p.estado === "Reservado";
+  const qrDe = (id) => db.qrs.find((q) => q.id === id);
+  // Pares que recibirán este QR: los de ese precio sin QR (o con uno de monto libre). Un QR libre: los que no tienen QR.
+  const paresPara = (monto) => monto
+    ? db.products.filter((p) => disponibles(p) && Number(p.precio) === Number(monto) && (!p.qrId || qrDe(p.qrId)?.monto == null))
+    : db.products.filter((p) => disponibles(p) && !p.qrId);
+  const mal = items.some((x) => x.monto !== "" && !(Number(x.monto) > 0));
+  const repetidos = (m) => m !== "" && items.filter((x) => x.monto === m).length > 1;
+  const guardar = () => run(async () => {
+    let ok = 0, pares = 0;
+    const asignados = new Set();
+    for (let i = 0; i < items.length; i++) {
+      const x = items[i];
+      setEstado(`Guardando ${i + 1} de ${items.length}…`);
+      const ids = paresPara(x.monto).map((p) => p.id).filter((id) => !asignados.has(id));
+      const id = await actions.createQR(x.file, x.nombre, x.monto, ids, { silencioso: true });
+      if (!id) break;
+      ids.forEach((pid) => asignados.add(pid));
+      ok++; pares += ids.length;
+    }
+    setEstado("");
+    await actions.refrescar();
+    if (ok) {
+      toast(`${ok === 1 ? "QR guardado" : `${ok} QR guardados`}${pares ? ` y puestos en ${pares} par${pares === 1 ? "" : "es"} del mismo precio` : ""}.`);
+      if (ok === items.length) onListo();
+      else setItems((a) => a.slice(ok));
+    }
+  });
+  return (
+    <div className="rounded-xl border border-cyan-200 bg-cyan-50 p-3 space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-slate-900">Subir QR {items.length ? `(${items.length})` : ""}</div>
+        <span className="text-xs text-slate-500">Puedes elegir varios a la vez</span>
+      </div>
+      {!items.length && <p className="text-xs text-slate-600">Elige las imágenes de tus QR (capturas de la app del banco). Después verás cada una en grande para escribir su monto.</p>}
+      <div className="flex gap-2"><PhotoPicker compact max={12} disabled={busy || items.length >= 12} onFiles={agregar} /></div>
+      <div className="grid sm:grid-cols-2 gap-3">
+        {items.map((x, i) => {
+          const n = paresPara(x.monto).length;
+          const yaHay = x.monto && db.qrs.some((q) => Number(q.monto) === Number(x.monto));
+          return (
+            <div key={x.key} className="rounded-xl bg-white border border-slate-200 p-2.5 space-y-2">
+              <div className="flex items-center justify-between"><span className="text-xs font-semibold text-slate-600">QR {i + 1}</span><button type="button" disabled={busy} onClick={() => quitar(x.key)} className="p-1 rounded text-slate-400 hover:text-rose-600" aria-label={`Quitar QR ${i + 1}`}><X size={16} /></button></div>
+              <button type="button" onClick={() => setVer(x.url)} className="relative w-full h-56 rounded-lg bg-white border border-slate-100 overflow-hidden" aria-label={`Ver el QR ${i + 1} en grande`}>
+                <img src={x.url} alt={`QR ${i + 1}`} className="w-full h-full object-contain" />
+                <span className="absolute bottom-1.5 right-1.5 text-[11px] font-semibold bg-slate-900/75 text-white rounded px-1.5 py-0.5">Toca para ampliar</span>
+              </button>
+              <div className="grid grid-cols-2 gap-2">
+                <Field label="Monto (Bs)"><Input type="number" inputMode="decimal" value={x.monto} placeholder="Vacío = libre" onChange={(e) => cambiar(x.key, "monto", e.target.value)} /></Field>
+                <Field label="Nombre (opcional)"><Input value={x.nombre} maxLength={60} placeholder={x.monto ? `QR Bs ${x.monto}` : "QR libre"} onChange={(e) => cambiar(x.key, "nombre", e.target.value)} /></Field>
+              </div>
+              <p className={`text-xs ${x.monto !== "" && !(Number(x.monto) > 0) ? "text-rose-600" : "text-slate-500"}`}>
+                {x.monto !== "" && !(Number(x.monto) > 0) ? "Escribe un monto mayor a cero, o déjalo vacío si es de monto libre."
+                  : x.monto ? `Se pondrá en ${n} par${n === 1 ? "" : "es"} de ${bs0(x.monto)}.` : `QR de monto libre: se pondrá en ${n} par${n === 1 ? "" : "es"} sin QR, y sirve para pagar totales.`}
+                {yaHay ? " Ya tienes otro QR con ese monto." : ""}{repetidos(x.monto) ? " Hay otro QR con el mismo monto en esta lista." : ""}
+              </p>
+            </div>
+          );
+        })}
+      </div>
+      <div className="flex justify-end gap-2 items-center">
+        {estado && <span className="text-xs text-slate-600 flex items-center gap-1.5 mr-auto"><Spinner /> {estado}</span>}
+        <Btn variant="ghost" size="sm" disabled={busy} onClick={onCancel}>Cancelar</Btn>
+        <Btn size="sm" disabled={busy || !items.length || mal} onClick={guardar}>{busy ? <Spinner /> : null} Guardar {items.length > 1 ? `los ${items.length} QR` : "QR"}</Btn>
+      </div>
+      {ver && <PhotoViewer urls={[ver]} title="QR" onClose={() => setVer(null)} />}
+    </div>
   );
 }

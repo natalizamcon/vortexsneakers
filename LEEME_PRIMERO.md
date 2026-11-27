@@ -190,3 +190,4 @@ Abre el enlace de Netlify e inicia sesión con el correo y la contraseña del pa
 - En “Imagen para redes” eliges qué foto usar (empieza con la que estabas viendo en la ficha).
 - Tarjetas más compactas: en el celular se ven dos filas completas. **Lo compro** y el botón del carrito (+🛍) van lado a lado.
 - Filtros **Talla** y **Medida (cm)** como listas desplazables, y arriba el aviso “Las tallas varían según la marca: guíate por los cm”.
+- **Subir varios QR a la vez:** en Inventario → QR de pago → “Subir QR (uno o varios)”. Cada QR se ve en grande (tócalo para ampliarlo y leer el monto) y tiene su propio campo de monto. Al guardar, cada QR se pone solo en los pares de su precio que no tienen QR.
